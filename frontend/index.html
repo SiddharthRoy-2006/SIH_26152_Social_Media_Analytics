@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="SocialIQ — AI-driven Social Media Intelligence Platform. SIH 2024 Problem Statement 26152.">
+  <title>SocialIQ Analytics — Social Media Intelligence</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- =======================================================
+     LOGIN GATE
+======================================================== -->
+<div id="loginGate" class="gate-screen">
+  <div class="login-card fade-in">
+    <div class="login-brand">
+      <div class="login-brand-mark">SQ</div>
+      <div class="login-brand-info">
+        <div class="login-brand-name">SocialIQ</div>
+        <div class="login-brand-sub">Social Media Intelligence Platform</div>
+      </div>
+    </div>
+
+    <div>
+      <h1 class="login-title">Welcome back</h1>
+      <p class="login-sub">Sign in to access the analytics dashboard</p>
+    </div>
+
+    <span class="demo-badge">⚡ Demo Mode — No real data required</span>
+
+    <form class="login-form" id="loginForm" onsubmit="return false;">
+      <div class="login-field">
+        <label for="loginUser">Username</label>
+        <input id="loginUser" type="text" placeholder="Enter any username" autocomplete="off" required>
+      </div>
+      <div class="login-field">
+        <label for="loginPass">Password</label>
+        <input id="loginPass" type="password" placeholder="Enter any password" autocomplete="off" required>
+      </div>
+      <button class="login-btn" id="loginBtn" type="submit">Sign in →</button>
+    </form>
+
+    <p class="login-footer">Smart India Hackathon 2024 · Problem Statement 26152<br>Social Media Analytics System · Team SIH-26152</p>
+  </div>
+</div>
+
+<!-- =======================================================
+     MODE SELECTION GATE
+======================================================== -->
+<div id="modeGate" class="gate-screen hidden">
+  <div class="mode-card fade-in">
+    <div class="mode-header">
+      <h1>Choose Your Analysis Mode</h1>
+      <p>Select how you'd like to explore social media intelligence for this session</p>
+    </div>
+
+    <div class="mode-grid">
+      <button class="mode-option" id="modeGeneralBtn" type="button">
+        <div class="mode-option-icon">🌐</div>
+        <h3>General Intelligence</h3>
+        <p>Explore the overall social media ecosystem — aggregated sentiment, trends, network influence, and audience demographics across all platforms.</p>
+        <span class="mode-tag">Ecosystem Overview</span>
+      </button>
+      <button class="mode-option" id="modeTopicBtn" type="button">
+        <div class="mode-option-icon">🎯</div>
+        <h3>Topic Analysis</h3>
+        <p>Deep-dive into a specific campaign, topic, or keyword. Track sentiment, trends, and audience response for your target subject over time.</p>
+        <span class="mode-tag">Focused Analysis</span>
+      </button>
+    </div>
+
+    <button class="mode-back-btn" id="modeBackBtn" type="button">← Back to Login</button>
+  </div>
+</div>
+
+<!-- =======================================================
+     APP SHELL
+======================================================== -->
+<div id="appShell" class="app-shell hidden">
+
+  <!-- ===== SIDEBAR ===== -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <div class="brand-mark">SQ</div>
+      <div>
+        <div class="brand-name">SocialIQ</div>
+        <div class="brand-version">v2.0 · Demo</div>
+      </div>
+    </div>
+
+    <div class="mode-pill" id="modePill">General</div>
+
+    <nav id="sidebarNav"><!-- rendered by JS --></nav>
+
+    <div class="sidebar-spacer"></div>
+
+    <div class="sidebar-footer">
+      <button class="switch-mode-btn" id="switchModeBtn" type="button">
+        <span>⇄</span>
+        <span id="switchModeLabel">Switch to Topic Analysis</span>
+      </button>
+
+      <button class="sidebar-profile" id="profileBtn" type="button">
+        <div class="profile-avatar">A</div>
+        <div class="profile-info">
+          <div class="profile-name" id="profileName">Analyst</div>
+          <div class="profile-role">Demo Session</div>
+        </div>
+        <span class="profile-dots">···</span>
+      </button>
+    </div>
+  </aside>
+
+  <!-- ===== MAIN CONTENT ===== -->
+  <main class="main-content">
+
+    <!-- TOPBAR -->
+    <header class="topbar">
+      <div class="topbar-left">
+        <div class="topbar-greeting" id="topbarGreeting">GOOD MORNING</div>
+        <h1 id="pageTitle">Social Media Overview</h1>
+      </div>
+      <div class="topbar-right">
+        <div class="search-box">
+          <span class="search-icon">⌕</span>
+          <input id="searchInput" type="search" placeholder="Search analytics…" autocomplete="off">
+        </div>
+        <button class="icon-btn" id="quickActionBtn" title="Quick actions" type="button" aria-label="Quick actions">✦</button>
+        <button class="icon-btn" id="refreshBtn" title="Refresh" type="button" aria-label="Refresh">↻</button>
+        <button class="icon-btn" id="notifBtn" title="Notifications" type="button" aria-label="Notifications">
+          ♢<span class="notif-dot"></span>
+        </button>
+      </div>
+    </header>
+
+    <!-- CONTROLS BAR -->
+    <div class="controls-bar" id="controlsBar">
+      <div class="controls-left">
+        <label class="platform-wrap">
+          <span class="plat-dot" id="platDot" style="background:var(--accent)"></span>
+          <select id="platformSelect" class="platform-select">
+            <option value="All Platforms">All Platforms</option>
+            <option value="Instagram">Instagram</option>
+            <option value="YouTube">YouTube</option>
+            <option value="Facebook">Facebook</option>
+            <option value="Twitter / X">Twitter / X</option>
+          </select>
+        </label>
+      </div>
+      <div class="controls-right">
+        <div class="status-badge" id="statusBadge">
+          <span class="status-dot pulse"></span>
+          <span id="statusText">Connecting…</span>
+        </div>
+        <button class="ctrl-btn" id="dateFilterBtn" type="button">
+          <span>◷</span>
+          <span id="dateFilterLabel">Last 30 Days</span>
+          <span>▾</span>
+        </button>
+        <button class="ctrl-btn" id="chartPeriodBtn" type="button">
+          <span id="chartPeriodLabel">Monthly</span>
+          <span>▾</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- DYNAMIC CONTENT -->
+    <div class="content-area" id="contentArea">
+      <!-- Rendered by JS -->
+    </div>
+
+  </main>
+
+</div>
+
+<!-- POPOVER HOST -->
+<div id="popoverRoot" class="popover-root"></div>
+
+<!-- TOOLTIP -->
+<div id="netTooltip" class="net-tooltip" role="tooltip"></div>
+
+<!-- TOAST -->
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+<script src="script.js"></script>
+</body>
+</html>
