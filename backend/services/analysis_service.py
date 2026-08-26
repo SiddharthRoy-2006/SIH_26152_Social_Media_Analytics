@@ -130,6 +130,10 @@ class DemoDataProvider:
     """Dynamic local mock data for the hackathon prototype."""
 
     def get_analysis(self, request: AnalysisRequest) -> AnalysisResponse:
+        # If no topic is provided for topic-specific analysis, return honest empty state
+        if not request.topic.strip():
+            return _empty_response(request)
+
         seed = _make_seed(
             request.topic, request.query,
             request.platform, request.period, request.chart_period,
@@ -140,7 +144,7 @@ class DemoDataProvider:
         plat_m = _PLATFORM_MULT.get(request.platform, 1.0)
         scale = pm * plat_m
 
-        topic = request.topic.strip() or "Digital Education"
+        topic = request.topic.strip()
         keyword = f"#{''.join(topic.split())[:18]}"
 
         # ----- core metrics -----

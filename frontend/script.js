@@ -232,10 +232,33 @@ function emptyData() {
 }
 
 /* ================================================================
-   API LAYER
+   API LAYER & BACKEND AUTO-DISCOVERY
    ================================================================ */
 
+let API_BASE = 'http://127.0.0.1:8001';
+const API_CANDIDATES = [
+  'http://127.0.0.1:8001',
+  'http://localhost:8001',
+  'http://127.0.0.1:8000',
+  'http://localhost:8000',
+];
+
 let _isLoadingData = false;
+let _apiBaseVerified = false;
+
+async function probeBackend() {
+  for (const candidate of API_CANDIDATES) {
+    try {
+      const res = await fetch(`${candidate}/health`, { signal: AbortSignal.timeout(1200) });
+      if (res.ok) {
+        API_BASE = candidate;
+        _apiBaseVerified = true;
+        return candidate;
+      }
+    } catch (_) {}
+  }
+  return null;
+}
 
 async function loadData() {
   if (_isLoadingData) return;
@@ -245,14 +268,27 @@ async function loadData() {
   if (refreshBtn) refreshBtn.classList.add('spinning');
   updateStatusBadge('connecting');
 
+  // Verify or discover backend URL
+  if (!_apiBaseVerified) {
+    await probeBackend();
+  }
+
   try {
     let url;
     if (state.mode === 'general') {
       url = `${API_BASE}/general?platform=${encodeURIComponent(state.platform)}&period=${encodeURIComponent(state.dateRange)}&chart_period=${encodeURIComponent(state.chartPeriod)}`;
     } else {
+      if (!state.campaign.topic.trim()) {
+        state.data = emptyData();
+        state.backendOK = true;
+        state.dataAvail = false;
+        updateStatusBadge('demo');
+        renderCurrentView();
+        return;
+      }
       url = `${API_BASE}/analysis?topic=${encodeURIComponent(state.campaign.topic)}&query=${encodeURIComponent(state.campaign.query)}&platform=${encodeURIComponent(state.platform)}&period=${encodeURIComponent(state.dateRange)}&chart_period=${encodeURIComponent(state.chartPeriod)}`;
     }
-    const resp = await fetch(url);
+    const resp = await fetch(url, { signal: AbortSignal.timeout(6000) });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const json = await resp.json();
     state.raw  = json;
@@ -264,6 +300,12 @@ async function loadData() {
     updateStatusBadge(state.dataAvail ? 'demo' : 'empty');
     renderCurrentView();
   } catch(err) {
+    // If current base failed, attempt to find an active candidate
+    const found = await probeBackend();
+    if (found) {
+      _isLoadingData = false;
+      return loadData();
+    }
     state.backendOK = false;
     state.data = emptyData();
     updateStatusBadge('offline');
@@ -280,8 +322,8 @@ function updateStatusBadge(s) {
   if (!badge) return;
   badge.className = 'status-badge';
   if (s === 'demo')       { badge.classList.add('demo');  text.textContent = 'Demo Data'; }
-  else if (s === 'offline') { text.textContent = 'Offline'; }
-  else if (s === 'connecting') { text.textContent = 'Loading…'; }
+  else if (s === 'offline') { text.textContent = 'Backend Offline'; }
+  else if (s === 'connecting') { text.textContent = 'Connecting…'; }
   else { text.textContent = 'No Data'; }
 }
 
@@ -1148,13 +1190,35 @@ function renderNetworkStatsPanel(container, d) {
    PAGE: TOPIC DASHBOARD
    ================================================================ */
 
+function quickAnalyze(topic) {
+  state.campaign.topic = topic;
+  const input = $('topicInput');
+  if (input) input.value = topic;
+  loadData();
+  showToast(`Analyzing "${topic}"…`);
+}
+
 function renderTopicDashboard(ca, d) {
+  const hasTopic = !!state.campaign.topic.trim();
+  const isOffline = !state.backendOK;
+
   ca.innerHTML = `
     <div class="fade-in">
       <!-- Back btn -->
       <div style="margin-bottom:var(--gap);display:flex;justify-content:flex-end">
         <button class="back-btn" id="topicBackBtn" type="button">← Back to Mode Selection</button>
       </div>
+
+      ${isOffline ? `
+      <div class="offline-banner">
+        <div class="offline-banner-left">
+          <span>⚠️</span>
+          <div>
+            <strong>Backend Connection Offline:</strong> Ensure the FastAPI server is running on <code>port 8001</code>.
+          </div>
+        </div>
+        <button class="retry-btn" onclick="loadData();showToast('Reconnecting…')">Retry Connection</button>
+      </div>` : ''}
 
       <!-- Campaign Panel -->
       <div class="campaign-panel">
@@ -1172,14 +1236,25 @@ function renderTopicDashboard(ca, d) {
           </div>
           <button class="analyze-btn" id="analyzeBtn" type="button">→ Analyze</button>
         </div>
-        ${d.dataAvailable && d.topic ? `<div class="camp-ctx">
+        ${hasTopic && d.dataAvailable ? `<div class="camp-ctx">
           Showing results for <strong>${esc(d.topic)}</strong> on <strong>${esc(d.platform)}</strong> · ${esc(d.period)} · Auto-refreshes every 15 min
         </div>` : '<div class="camp-ctx">Enter a topic above and click Analyze to generate intelligence.</div>'}
       </div>
 
-      ${!d.dataAvailable ? `<div style="text-align:center;padding:40px 20px;color:var(--text-3);font-size:14px">
-        <div style="font-size:32px;margin-bottom:12px">📊</div>
-        <div>Enter a topic to generate intelligence, or run the backend in <code>demo</code> mode.</div>
+      ${!hasTopic || !d.dataAvailable ? `
+      <!-- Clean Empty State Before Topic Entry -->
+      <div class="empty-topic-card">
+        <div class="empty-topic-icon">🎯</div>
+        <h3>Enter a topic to generate analysis</h3>
+        <p>Search for a specific campaign, topic, or keyword above to compute sentiment distributions, audience reach, weekly engagement, and AI-driven intelligence.</p>
+        <div class="topic-suggestions">
+          <span class="suggestion-label">Suggested topics:</span>
+          <button class="topic-chip" onclick="quickAnalyze('NEP 2020')">NEP 2020</button>
+          <button class="topic-chip" onclick="quickAnalyze('AI in Education')">AI in Education</button>
+          <button class="topic-chip" onclick="quickAnalyze('Digital India')">Digital India</button>
+          <button class="topic-chip" onclick="quickAnalyze('Youth Innovation')">Youth Innovation</button>
+          <button class="topic-chip" onclick="quickAnalyze('Ed-Tech Growth')">Ed-Tech Growth</button>
+        </div>
       </div>` : `
       <!-- Stats -->
       <div class="stats-grid">
@@ -1240,15 +1315,27 @@ function renderTopicDashboard(ca, d) {
 
   // Bind back & analyze
   $('topicBackBtn')?.addEventListener('click', () => showModeSelect());
-  $('analyzeBtn')?.addEventListener('click', () => {
+  const doAnalyze = () => {
     const t = $('topicInput')?.value.trim() || '';
     const q = $('queryInput')?.value.trim() || '';
+    if (!t) {
+      showToast('Please enter a topic to analyze.');
+      return;
+    }
     state.campaign = { topic:t, query:q };
     loadData();
-    showToast(`Analyzing "${t || 'All Topics'}"…`);
+    showToast(`Analyzing "${t}"…`);
+  };
+
+  $('analyzeBtn')?.addEventListener('click', doAnalyze);
+  $('topicInput')?.addEventListener('keydown', e => {
+    if (e.key === 'Enter') doAnalyze();
+  });
+  $('queryInput')?.addEventListener('keydown', e => {
+    if (e.key === 'Enter') doAnalyze();
   });
 
-  if (!d.dataAvailable) return;
+  if (!hasTopic || !d.dataAvailable) return;
 
   requestAnimationFrame(() => {
     const labels = generateDateLabels(d.period, d.growthSeries.length);
@@ -2062,6 +2149,7 @@ window.closeAllPopovers = closeAllPopovers;
 window.showToast = showToast;
 window.exportReport = exportReport;
 window.applyTheme = applyTheme;
+window.quickAnalyze = quickAnalyze;
 
 /* ================================================================
    INIT
