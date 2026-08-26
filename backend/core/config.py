@@ -16,5 +16,14 @@ class Settings:
         if origin.strip()
     )
 
+    # --- Platform API credentials (read from env, never committed) ---
+    youtube_api_key: str = os.getenv("YOUTUBE_API_KEY", "")
+    telegram_api_id: str = os.getenv("TELEGRAM_API_ID", "")
+    telegram_api_hash: str = os.getenv("TELEGRAM_API_HASH", "")
+    reddit_client_id: str = os.getenv("REDDIT_CLIENT_ID", "")
+    reddit_client_secret: str = os.getenv("REDDIT_CLIENT_SECRET", "")
+    twitter_bearer_token: str = os.getenv("TWITTER_BEARER_TOKEN", "")
+
 
 settings = Settings()
+

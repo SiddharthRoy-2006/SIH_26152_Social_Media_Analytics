@@ -302,6 +302,11 @@ class DemoDataProvider:
 # ---------------------------------------------------------------------------
 
 def get_provider(data_mode: str) -> PlatformDataProvider:
+    if data_mode == "live":
+        from backend.connectors.registry import get_registry
+        from backend.services.live_provider import LiveAnalysisProvider
+        return LiveAnalysisProvider(get_registry())
     if data_mode == "demo":
         return DemoDataProvider()
     return EmptyDataProvider()
+

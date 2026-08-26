@@ -9,7 +9,6 @@
    CONSTANTS
    ================================================================ */
 
-const API_BASE  = 'http://127.0.0.1:8001';
 const AUTO_MS   = 15 * 60 * 1000; // EXACTLY 15 minutes
 const CHART_COLORS = ['#2563eb','#7c3aed','#059669','#d97706','#dc2626','#0284c7','#db2777','#ea580c'];
 const EMOTION_COLORS = {
@@ -20,8 +19,62 @@ const EMOTION_COLORS = {
 const COMMUNITY_COLORS = ['#2563eb','#7c3aed','#059669','#d97706','#dc2626','#0284c7'];
 const PLATFORM_COLORS  = {
   'Instagram':'#e1306c','YouTube':'#ff0000','Facebook':'#1877f2',
-  'Twitter / X':'#000000','All Platforms':'#2563eb',
+  'Twitter / X':'#000000','Telegram':'#0088cc','Reddit':'#ff4500','All Platforms':'#2563eb',
 };
+
+const TOPIC_VOCABULARY = [
+  { name: 'AI in Education', category: 'Technology' },
+  { name: 'Digital Literacy', category: 'Education' },
+  { name: 'Youth Innovation', category: 'Innovation' },
+  { name: 'Ed-Tech Growth', category: 'Technology' },
+  { name: 'Online Learning', category: 'Education' },
+  { name: 'STEM Careers', category: 'Career' },
+  { name: 'Digital Inclusion', category: 'Policy' },
+  { name: 'Future of Work', category: 'Economy' },
+  { name: 'Climate Awareness', category: 'Environment' },
+  { name: 'Mental Health Advocacy', category: 'Health' },
+  { name: 'Women in Tech', category: 'Diversity' },
+  { name: 'Sustainable Living', category: 'Environment' },
+  { name: 'Blockchain in Finance', category: 'Finance' },
+  { name: 'Open Source Culture', category: 'Technology' },
+  { name: 'Cybersecurity Awareness', category: 'Security' },
+  { name: 'Smart Cities', category: 'Infrastructure' },
+  { name: 'Health Tech', category: 'Health' },
+  { name: 'Green Energy', category: 'Environment' },
+  { name: 'Data Privacy', category: 'Policy' },
+  { name: 'Social Commerce', category: 'Economy' },
+  { name: 'Education Policy', category: 'Policy' },
+  { name: 'NEP 2020 Impact', category: 'Policy' },
+  { name: 'Higher Education Reform', category: 'Education' },
+  { name: 'Digital Classrooms', category: 'Education' },
+  { name: 'Teacher Training', category: 'Education' },
+  { name: 'Student Wellbeing', category: 'Health' },
+  { name: 'University Rankings', category: 'Education' },
+  { name: 'Scholarship Access', category: 'Policy' },
+  { name: 'Coding for Kids', category: 'Education' },
+  { name: 'STEM Education', category: 'Education' },
+  { name: 'Blended Learning', category: 'Education' },
+  { name: 'EdTech Funding', category: 'Finance' },
+  { name: 'Generative AI', category: 'Technology' },
+  { name: 'Large Language Models', category: 'Technology' },
+  { name: 'Quantum Computing', category: 'Technology' },
+  { name: 'AR/VR Adoption', category: 'Technology' },
+  { name: '5G Rollout', category: 'Telecom' },
+  { name: 'Edge Computing', category: 'Technology' },
+  { name: 'Open AI Debate', category: 'Technology' },
+  { name: 'AI Regulation', category: 'Policy' },
+  { name: 'Digital India', category: 'Governance' },
+  { name: 'Skill India', category: 'Governance' },
+  { name: 'Innovate India', category: 'Innovation' },
+  { name: 'Mental Health Awareness', category: 'Health' },
+  { name: 'Telehealth Growth', category: 'Health' },
+  { name: 'Vaccine Literacy', category: 'Health' },
+  { name: 'Nutrition Science', category: 'Health' },
+  { name: 'AI in Diagnostics', category: 'Health' },
+  { name: 'Governance Transparency', category: 'Governance' },
+  { name: 'Economic Reform', category: 'Economy' },
+  { name: 'Rural Development', category: 'Governance' },
+];
 
 /* ================================================================
    STATE
@@ -44,6 +97,7 @@ const state = {
   data:        null,         // normalised response for current mode
   raw:         null,         // raw backend JSON
   autoTimer:   null,
+  platformCapabilities: {},  // populated from /health
 };
 
 /* Apply saved theme immediately */
@@ -245,6 +299,7 @@ const API_CANDIDATES = [
 
 let _isLoadingData = false;
 let _apiBaseVerified = false;
+let _allPlatModalTimer = null;
 
 async function probeBackend() {
   for (const candidate of API_CANDIDATES) {
@@ -253,11 +308,160 @@ async function probeBackend() {
       if (res.ok) {
         API_BASE = candidate;
         _apiBaseVerified = true;
+        try {
+          const healthData = await res.json();
+          if (healthData && healthData.platforms) {
+            state.platformCapabilities = healthData.platforms;
+            checkPlatformNotice(state.platform);
+          }
+        } catch (_) {}
         return candidate;
       }
     } catch (_) {}
   }
   return null;
+}
+
+function checkPlatformNotice(platform) {
+  const noticeEl = $('platformNotice');
+  if (!noticeEl) return;
+  if (!platform || platform === 'All Platforms') {
+    noticeEl.classList.add('hidden');
+    noticeEl.innerHTML = '';
+    return;
+  }
+
+  const cap = state.platformCapabilities ? state.platformCapabilities[platform] : null;
+  if (!cap) {
+    noticeEl.classList.add('hidden');
+    noticeEl.innerHTML = '';
+    return;
+  }
+
+  if (cap.status === 'unavailable') {
+    noticeEl.className = 'platform-notice warning';
+    noticeEl.innerHTML = `
+      <div class="platform-notice-content">
+        <span class="platform-notice-icon">⚠️</span>
+        <div><strong>${esc(platform)}:</strong> ${esc(cap.reason || 'Live API access is currently unavailable.')}</div>
+      </div>
+      <button class="platform-notice-close" onclick="dismissPlatformNotice()" title="Dismiss notice">✕</button>
+    `;
+    noticeEl.classList.remove('hidden');
+  } else if (cap.status === 'not_configured') {
+    noticeEl.className = 'platform-notice info';
+    noticeEl.innerHTML = `
+      <div class="platform-notice-content">
+        <span class="platform-notice-icon">ℹ️</span>
+        <div><strong>${esc(platform)}:</strong> ${esc(cap.reason || 'API credentials not configured. Operating in development mode.')}</div>
+      </div>
+      <button class="platform-notice-close" onclick="dismissPlatformNotice()" title="Dismiss notice">✕</button>
+    `;
+    noticeEl.classList.remove('hidden');
+  } else if (cap.status === 'limited') {
+    noticeEl.className = 'platform-notice warning';
+    noticeEl.innerHTML = `
+      <div class="platform-notice-content">
+        <span class="platform-notice-icon">⚡</span>
+        <div><strong>${esc(platform)} (Limited Access):</strong> ${esc(cap.reason || 'Partial data access.')}</div>
+      </div>
+      <button class="platform-notice-close" onclick="dismissPlatformNotice()" title="Dismiss notice">✕</button>
+    `;
+    noticeEl.classList.remove('hidden');
+  } else {
+    noticeEl.classList.add('hidden');
+    noticeEl.innerHTML = '';
+  }
+}
+
+function dismissPlatformNotice() {
+  const noticeEl = $('platformNotice');
+  if (noticeEl) {
+    noticeEl.classList.add('hidden');
+    noticeEl.innerHTML = '';
+  }
+}
+
+function showAllPlatformsModal() {
+  const modal = $('allPlatformsModal');
+  if (!modal) return;
+
+  const caps = state.platformCapabilities || {};
+  const platforms = [
+    { name: 'YouTube', icon: '▶' },
+    { name: 'Telegram', icon: '✈' },
+    { name: 'Reddit', icon: '💬' },
+    { name: 'Instagram', icon: '📷' },
+    { name: 'Facebook', icon: '👤' },
+    { name: 'Twitter / X', icon: '𝕏' },
+  ];
+
+  const rowsHTML = platforms.map(p => {
+    const c = caps[p.name] || { status: 'demo', reason: 'Demo simulation available' };
+    const statusLabel = c.status === 'connected' ? 'Connected' :
+                        c.status === 'limited' ? 'Limited' :
+                        c.status === 'not_configured' ? 'Not Configured' :
+                        c.status === 'unavailable' ? 'Unavailable' :
+                        c.status === 'error' ? 'Error' : 'Demo Mode';
+    return `
+      <div class="platform-status-row">
+        <div class="platform-row-info">
+          <div class="platform-row-title">
+            <span>${p.icon}</span>
+            <span>${esc(p.name)}</span>
+          </div>
+          <div class="platform-row-desc">${esc(c.reason || 'Standard data source')}</div>
+        </div>
+        <span class="plat-pill ${esc(c.status)}">${statusLabel}</span>
+      </div>
+    `;
+  }).join('');
+
+  modal.innerHTML = `
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2 id="allPlatModalTitle">🌐 All Platforms Ecosystem Status</h2>
+        <button class="modal-close-btn" onclick="closeAllPlatformsModal()" title="Close">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="modal-subtitle">
+          Real-time capability overview for all integrated platform connectors. Ecosystem analytics aggregates verified active data sources.
+        </div>
+        <div class="platform-status-list">
+          ${rowsHTML}
+        </div>
+      </div>
+      <div class="modal-footer">
+        <div class="modal-timer-note" id="modalCountdown">Auto-closing in 12s…</div>
+        <div class="modal-actions">
+          <button class="modal-btn-cancel" onclick="closeAllPlatformsModal()">Cancel</button>
+          <button class="modal-btn-proceed" onclick="closeAllPlatformsModal()">Proceed with Available</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  modal.classList.remove('hidden');
+
+  if (_allPlatModalTimer) clearInterval(_allPlatModalTimer);
+  let secondsLeft = 12;
+  const countdownEl = $('modalCountdown');
+  _allPlatModalTimer = setInterval(() => {
+    secondsLeft--;
+    if (countdownEl) countdownEl.textContent = `Auto-closing in ${secondsLeft}s…`;
+    if (secondsLeft <= 0) {
+      closeAllPlatformsModal();
+    }
+  }, 1000);
+}
+
+function closeAllPlatformsModal() {
+  if (_allPlatModalTimer) {
+    clearInterval(_allPlatModalTimer);
+    _allPlatModalTimer = null;
+  }
+  const modal = $('allPlatformsModal');
+  if (modal) modal.classList.add('hidden');
 }
 
 async function loadData() {
@@ -282,7 +486,7 @@ async function loadData() {
         state.data = emptyData();
         state.backendOK = true;
         state.dataAvail = false;
-        updateStatusBadge('demo');
+        updateStatusBadge('empty');
         renderCurrentView();
         return;
       }
@@ -297,7 +501,19 @@ async function loadData() {
     state.dataAvail  = state.data.dataAvailable;
     state.dataSource = state.data.source;
     state.lastUpdated = new Date();
-    updateStatusBadge(state.dataAvail ? 'demo' : 'empty');
+
+    if (!state.dataAvail) {
+      updateStatusBadge('empty');
+    } else if (state.dataSource === 'live') {
+      updateStatusBadge('live');
+    } else if (state.dataSource === 'limited') {
+      updateStatusBadge('limited');
+    } else if (state.dataSource === 'demo') {
+      updateStatusBadge('demo');
+    } else {
+      updateStatusBadge('demo');
+    }
+
     renderCurrentView();
   } catch(err) {
     // If current base failed, attempt to find an active candidate
@@ -321,8 +537,10 @@ function updateStatusBadge(s) {
   const text  = $('statusText');
   if (!badge) return;
   badge.className = 'status-badge';
-  if (s === 'demo')       { badge.classList.add('demo');  text.textContent = 'Demo Data'; }
-  else if (s === 'offline') { text.textContent = 'Backend Offline'; }
+  if (s === 'live')            { badge.classList.add('live');    text.textContent = 'Live Real Data'; }
+  else if (s === 'limited')    { badge.classList.add('limited'); text.textContent = 'Limited Access'; }
+  else if (s === 'demo')       { badge.classList.add('demo');    text.textContent = 'Demo Data'; }
+  else if (s === 'offline')    { text.textContent = 'Backend Offline'; }
   else if (s === 'connecting') { text.textContent = 'Connecting…'; }
   else { text.textContent = 'No Data'; }
 }
@@ -1187,15 +1405,35 @@ function renderNetworkStatsPanel(container, d) {
 }
 
 /* ================================================================
-   PAGE: TOPIC DASHBOARD
+   PAGE: TOPIC DASHBOARD & AUTOCOMPLETE
    ================================================================ */
 
+let _activeAutocompleteIdx = -1;
+let _currentSuggestions = [];
+
+function hideAutocomplete() {
+  const box = $('topicAutocomplete');
+  if (box) {
+    box.classList.remove('show');
+    box.innerHTML = '';
+  }
+  _activeAutocompleteIdx = -1;
+  _currentSuggestions = [];
+}
+
 function quickAnalyze(topic) {
-  state.campaign.topic = topic;
+  const clean = String(topic || '').trim().replace(/\s+/g, ' ');
+  if (!clean) return;
+  state.campaign.topic = clean;
   const input = $('topicInput');
-  if (input) input.value = topic;
+  if (input) input.value = clean;
+  hideAutocomplete();
   loadData();
-  showToast(`Analyzing "${topic}"…`);
+  showToast(`Analyzing "${clean}"…`);
+}
+
+function selectSuggestion(name) {
+  quickAnalyze(name);
 }
 
 function renderTopicDashboard(ca, d) {
@@ -1226,23 +1464,24 @@ function renderTopicDashboard(ca, d) {
         <div class="campaign-fields">
           <div class="camp-field">
             <label for="topicInput">Topic or Campaign</label>
-            <input id="topicInput" type="text" placeholder="e.g. AI in Education, NEP 2020, Digital India…"
-              value="${esc(state.campaign.topic)}" maxlength="120">
+            <input id="topicInput" type="text" placeholder="Type a topic (e.g. NEP 2020, AI in Education, Digital India)…"
+              value="${esc(state.campaign.topic)}" maxlength="120" autocomplete="off">
+            <div id="topicAutocomplete" class="topic-autocomplete"></div>
           </div>
           <div class="camp-field">
             <label for="queryInput">Optional Query Refinement</label>
             <input id="queryInput" type="text" placeholder="e.g. impact, sentiments, debate…"
-              value="${esc(state.campaign.query)}" maxlength="120">
+              value="${esc(state.campaign.query)}" maxlength="120" autocomplete="off">
           </div>
           <button class="analyze-btn" id="analyzeBtn" type="button">→ Analyze</button>
         </div>
         ${hasTopic && d.dataAvailable ? `<div class="camp-ctx">
           Showing results for <strong>${esc(d.topic)}</strong> on <strong>${esc(d.platform)}</strong> · ${esc(d.period)} · Auto-refreshes every 15 min
-        </div>` : '<div class="camp-ctx">Enter a topic above and click Analyze to generate intelligence.</div>'}
+        </div>` : '<div class="camp-ctx">Enter a topic above or pick a suggested topic to generate intelligence.</div>'}
       </div>
 
-      ${!hasTopic || !d.dataAvailable ? `
-      <!-- Clean Empty State Before Topic Entry -->
+      ${!hasTopic ? `
+      <!-- 1. Clean Initial State Before Topic Entry -->
       <div class="empty-topic-card">
         <div class="empty-topic-icon">🎯</div>
         <h3>Enter a topic to generate analysis</h3>
@@ -1255,8 +1494,21 @@ function renderTopicDashboard(ca, d) {
           <button class="topic-chip" onclick="quickAnalyze('Youth Innovation')">Youth Innovation</button>
           <button class="topic-chip" onclick="quickAnalyze('Ed-Tech Growth')">Ed-Tech Growth</button>
         </div>
+      </div>` : !d.dataAvailable ? `
+      <!-- 2. Clean No-Data State for Unmatched/Empty Results -->
+      <div class="no-data-card">
+        <div class="no-data-icon">🔍</div>
+        <h3>No relevant data found for "${esc(state.campaign.topic)}"</h3>
+        <p>We could not find active campaign or topic metrics for this specific query on <strong>${esc(state.platform)}</strong>. Try searching for a known topic or keyword.</p>
+        <div class="topic-suggestions">
+          <span class="suggestion-label">Try searching:</span>
+          <button class="topic-chip" onclick="quickAnalyze('NEP 2020')">NEP 2020</button>
+          <button class="topic-chip" onclick="quickAnalyze('Digital India')">Digital India</button>
+          <button class="topic-chip" onclick="quickAnalyze('AI in Education')">AI in Education</button>
+          <button class="topic-chip" onclick="quickAnalyze('Climate Awareness')">Climate Awareness</button>
+        </div>
       </div>` : `
-      <!-- Stats -->
+      <!-- 3. Successful Analysis State -->
       <div class="stats-grid">
         ${statCard('Total Reach',     fmt(d.reach),      'ic-blue',  '📡', `${d.growth>=0?'+':''}${pct(d.growth)} vs prev`, d.growth>=0)}
         ${statCard('Total Likes',     fmt(d.likes),      'ic-red',   '♥', `${fmt(d.shares)} shares`, true)}
@@ -1313,24 +1565,113 @@ function renderTopicDashboard(ca, d) {
       `}
     </div>`;
 
-  // Bind back & analyze
+  // Bind back button
   $('topicBackBtn')?.addEventListener('click', () => showModeSelect());
+
+  // Analyze function with normalization
   const doAnalyze = () => {
-    const t = $('topicInput')?.value.trim() || '';
-    const q = $('queryInput')?.value.trim() || '';
-    if (!t) {
+    const rawT = $('topicInput')?.value || '';
+    const cleanT = rawT.trim().replace(/\s+/g, ' ');
+    const cleanQ = ($('queryInput')?.value || '').trim().replace(/\s+/g, ' ');
+    hideAutocomplete();
+
+    if (!cleanT) {
       showToast('Please enter a topic to analyze.');
+      state.campaign.topic = '';
+      renderTopicDashboard(ca, d);
       return;
     }
-    state.campaign = { topic:t, query:q };
+
+    state.campaign = { topic: cleanT, query: cleanQ };
     loadData();
-    showToast(`Analyzing "${t}"…`);
+    showToast(`Analyzing "${cleanT}"…`);
   };
 
   $('analyzeBtn')?.addEventListener('click', doAnalyze);
-  $('topicInput')?.addEventListener('keydown', e => {
-    if (e.key === 'Enter') doAnalyze();
+
+  // Topic input autocomplete & keyboard navigation
+  const topicInput = $('topicInput');
+  const autocompleteBox = $('topicAutocomplete');
+
+  topicInput?.addEventListener('input', e => {
+    const q = (e.target.value || '').trim();
+    if (!q || !autocompleteBox) {
+      hideAutocomplete();
+      return;
+    }
+
+    const qLower = q.toLowerCase();
+    const prefixMatches = [];
+    const substringMatches = [];
+
+    for (const item of TOPIC_VOCABULARY) {
+      const itemLower = item.name.toLowerCase();
+      if (itemLower.startsWith(qLower)) {
+        prefixMatches.push(item);
+      } else if (itemLower.includes(qLower)) {
+        substringMatches.push(item);
+      }
+    }
+
+    _currentSuggestions = [...prefixMatches, ...substringMatches].slice(0, 6);
+
+    if (_currentSuggestions.length === 0) {
+      hideAutocomplete();
+      return;
+    }
+
+    _activeAutocompleteIdx = -1;
+    autocompleteBox.innerHTML = _currentSuggestions.map((item, idx) => `
+      <div class="topic-autocomplete-item" data-idx="${idx}" data-name="${esc(item.name)}">
+        <span>${esc(item.name)}</span>
+        <span class="topic-autocomplete-tag">${esc(item.category)}</span>
+      </div>
+    `).join('');
+    autocompleteBox.classList.add('show');
+
+    autocompleteBox.querySelectorAll('.topic-autocomplete-item').forEach(el => {
+      el.addEventListener('click', ev => {
+        ev.stopPropagation();
+        selectSuggestion(el.dataset.name);
+      });
+    });
   });
+
+  topicInput?.addEventListener('keydown', e => {
+    if (!autocompleteBox || !autocompleteBox.classList.contains('show')) {
+      if (e.key === 'Enter') {
+        doAnalyze();
+      }
+      return;
+    }
+
+    const items = autocompleteBox.querySelectorAll('.topic-autocomplete-item');
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      _activeAutocompleteIdx = (_activeAutocompleteIdx + 1) % items.length;
+      items.forEach((it, idx) => it.classList.toggle('active', idx === _activeAutocompleteIdx));
+      if (items[_activeAutocompleteIdx]) {
+        topicInput.value = items[_activeAutocompleteIdx].dataset.name;
+      }
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      _activeAutocompleteIdx = (_activeAutocompleteIdx - 1 + items.length) % items.length;
+      items.forEach((it, idx) => it.classList.toggle('active', idx === _activeAutocompleteIdx));
+      if (items[_activeAutocompleteIdx]) {
+        topicInput.value = items[_activeAutocompleteIdx].dataset.name;
+      }
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (_activeAutocompleteIdx >= 0 && items[_activeAutocompleteIdx]) {
+        selectSuggestion(items[_activeAutocompleteIdx].dataset.name);
+      } else {
+        doAnalyze();
+      }
+    } else if (e.key === 'Escape') {
+      hideAutocomplete();
+    }
+  });
+
   $('queryInput')?.addEventListener('keydown', e => {
     if (e.key === 'Enter') doAnalyze();
   });
@@ -1867,7 +2208,7 @@ function renderSettingsPage(ca, d) {
         <div style="display:flex;flex-direction:column;gap:8px;font-size:13px;color:var(--text-2)">
           <div><strong>Version:</strong> 2.0 (SIH Prototype)</div>
           <div><strong>Problem Statement:</strong> 26152 — Social Media Analytics</div>
-          <div><strong>Event:</strong> Smart India Hackathon 2024</div>
+          <div><strong>Event:</strong> Smart India Hackathon 2026</div>
           <div><strong>Mode:</strong> Demo / Simulation — No real API data</div>
           <div><strong>Backend:</strong> FastAPI · <strong>Frontend:</strong> Vanilla HTML/JS/CSS</div>
           <div><strong>ML Layer:</strong> Lightweight simulation engines (ml/ package)</div>
@@ -1968,20 +2309,37 @@ function buildAgeDist(d) {
 }
 
 function generateDateLabels(period, n) {
-  if (!n) return [];
+  if (!n || n <= 0) return [];
   const labels = [];
   const now = new Date();
-  const fmt_short = d => `${d.getDate()}/${d.getMonth()+1}`;
   const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
-  for (let i = n-1; i >= 0; i--) {
-    const d = new Date(now);
-    if (period === 'Today')        { d.setHours(now.getHours()-i*2); labels.push(d.getHours()+':00'); }
-    else if (period === 'Last 7 Days')  { d.setDate(now.getDate()-i); labels.push(fmt_short(d)); }
-    else if (period === 'Last 30 Days') { d.setDate(now.getDate()-Math.round(i*(30/n))); labels.push(fmt_short(d)); }
-    else { d.setMonth(now.getMonth()-i); labels.push(months[d.getMonth()]); }
+  if (period === 'Today') {
+    for (let i = n - 1; i >= 0; i--) {
+      const d = new Date(now.getTime() - i * 2 * 3600 * 1000);
+      const h = String(d.getHours()).padStart(2, '0');
+      labels.push(`${h}:00`);
+    }
+  } else if (period === 'Last 7 Days') {
+    for (let i = n - 1; i >= 0; i--) {
+      const d = new Date(now.getTime() - i * 24 * 3600 * 1000);
+      labels.push(`${days[d.getDay()]} ${d.getDate()}`);
+    }
+  } else if (period === 'Last 30 Days') {
+    for (let i = n - 1; i >= 0; i--) {
+      const dayOffset = Math.round(i * (30 / Math.max(n - 1, 1)));
+      const d = new Date(now.getTime() - dayOffset * 24 * 3600 * 1000);
+      labels.push(`${d.getDate()} ${months[d.getMonth()]}`);
+    }
+  } else {
+    // 1 Year
+    for (let i = n - 1; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      labels.push(months[d.getMonth()]);
+    }
   }
-  return labels.reverse ? labels : labels;
+  return labels;
 }
 
 function capitalise(s) {
@@ -2021,6 +2379,10 @@ function setupControls() {
   $('platformSelect')?.addEventListener('change', e => {
     state.platform = e.target.value;
     updatePlatformDot();
+    checkPlatformNotice(state.platform);
+    if (state.platform === 'All Platforms') {
+      showAllPlatformsModal();
+    }
     loadData();
   });
 
@@ -2098,6 +2460,15 @@ function setupControls() {
       }
     }
   });
+
+  // Global click outside to dismiss autocomplete
+  document.addEventListener('click', e => {
+    const box = $('topicAutocomplete');
+    const input = $('topicInput');
+    if (box && !box.contains(e.target) && e.target !== input) {
+      hideAutocomplete();
+    }
+  });
 }
 
 function selectDateRange(range) {
@@ -2111,17 +2482,51 @@ function selectDateRange(range) {
    LOGIN SETUP
    ================================================================ */
 
-function setupLogin() {
-  $('loginForm')?.addEventListener('submit', () => {
-    const user = $('loginUser')?.value.trim();
-    const pass = $('loginPass')?.value.trim();
-    if (!user || !pass) { showToast('Please enter username and password.'); return; }
-    state.username = user;
-    $('profileName').textContent = user;
-    showModeSelect();
-  });
+function handleLogin(e) {
+  if (e) e.preventDefault();
+  const user = ($('loginUser')?.value || '').trim();
+  const pass = ($('loginPass')?.value || '').trim();
+  if (!user || !pass) {
+    showToast('Please enter both username and password.');
+    return;
+  }
+  state.username = user;
+  const profileName = $('profileName');
+  if (profileName) profileName.textContent = user;
+  showToast(`Welcome back, ${user}!`);
+  showModeSelect();
+}
 
-  $('loginBtn')?.addEventListener('click', () => $('loginForm').dispatchEvent(new Event('submit')));
+function togglePasswordVisibility() {
+  const passInput = $('loginPass');
+  const toggleBtn = $('togglePasswordBtn');
+  if (!passInput || !toggleBtn) return;
+  const isPass = passInput.type === 'password';
+  passInput.type = isPass ? 'text' : 'password';
+  toggleBtn.title = isPass ? 'Hide password' : 'Show password';
+  toggleBtn.setAttribute('aria-label', isPass ? 'Hide password' : 'Show password');
+
+  const showIcon = toggleBtn.querySelector('.eye-show');
+  const hideIcon = toggleBtn.querySelector('.eye-hide');
+  if (showIcon && hideIcon) {
+    showIcon.classList.toggle('hidden', isPass);
+    hideIcon.classList.toggle('hidden', !isPass);
+  }
+}
+
+function setupLogin() {
+  const form = $('loginForm');
+  const btn = $('loginBtn');
+  const toggleBtn = $('togglePasswordBtn');
+
+  form?.addEventListener('submit', handleLogin);
+  btn?.addEventListener('click', handleLogin);
+
+  toggleBtn?.addEventListener('click', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    togglePasswordVisibility();
+  });
 }
 
 /* ================================================================
@@ -2150,6 +2555,12 @@ window.showToast = showToast;
 window.exportReport = exportReport;
 window.applyTheme = applyTheme;
 window.quickAnalyze = quickAnalyze;
+window.selectSuggestion = selectSuggestion;
+window.hideAutocomplete = hideAutocomplete;
+window.togglePasswordVisibility = togglePasswordVisibility;
+window.dismissPlatformNotice = dismissPlatformNotice;
+window.showAllPlatformsModal = showAllPlatformsModal;
+window.closeAllPlatformsModal = closeAllPlatformsModal;
 
 /* ================================================================
    INIT

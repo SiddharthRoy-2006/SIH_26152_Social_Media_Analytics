@@ -33,8 +33,13 @@ def home():
 @app.get("/health", response_model=HealthResponse)
 def health():
     """Dedicated health-check endpoint for monitoring and frontend status checks."""
+    from backend.connectors.registry import get_registry
+
+    registry = get_registry()
     return HealthResponse(
         status="ok",
         data_mode=settings.data_mode,
         version="0.2.0",
+        platforms=registry.to_dict(),
     )
+

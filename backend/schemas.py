@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 # Primitive types
 # ---------------------------------------------------------------------------
 
-Platform = Literal["Instagram", "YouTube", "Facebook", "Twitter / X", "All Platforms"]
+Platform = Literal["Instagram", "YouTube", "Facebook", "Twitter / X", "Telegram", "Reddit", "All Platforms"]
 Period = Literal["Today", "Last 7 Days", "Last 30 Days", "1 Year"]
 ChartPeriod = Literal["Daily", "Weekly", "Monthly", "Yearly"]
 Mode = Literal["general", "topic"]
@@ -52,7 +52,7 @@ class AnalysisResponse(BaseModel):
     period: str
     chart_period: str
     data_available: bool
-    source: Literal["empty", "demo", "provider"]
+    source: Literal["empty", "demo", "live", "mixed", "provider"]
     metrics: dict
     audience: dict
     sentiment: dict
@@ -109,3 +109,5 @@ class HealthResponse(BaseModel):
     status: str
     data_mode: str
     version: str
+    platforms: dict[str, Any] = Field(default_factory=dict)
+

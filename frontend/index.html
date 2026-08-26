@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="SocialIQ — AI-driven Social Media Intelligence Platform. SIH 2024 Problem Statement 26152.">
+  <meta name="description" content="SocialIQ — AI-driven Social Media Intelligence Platform. SIH 2026 Problem Statement 26152.">
   <title>SocialIQ Analytics — Social Media Intelligence</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -16,35 +16,57 @@
      LOGIN GATE
 ======================================================== -->
 <div id="loginGate" class="gate-screen">
-  <div class="login-card fade-in">
-    <div class="login-brand">
-      <div class="login-brand-mark">SQ</div>
-      <div class="login-brand-info">
-        <div class="login-brand-name">SocialIQ</div>
-        <div class="login-brand-sub">Social Media Intelligence Platform</div>
-      </div>
+  <div style="display:flex;flex-direction:column;align-items:center;width:100%;max-width:440px;">
+    
+    <!-- Team Presentation Branding -->
+    <div class="team-presentation-badge fade-in">
+      <span style="font-size:14px">✨</span>
+      <span>Presenting by <strong>Team NEXORA</strong></span>
     </div>
 
-    <div>
-      <h1 class="login-title">Welcome back</h1>
-      <p class="login-sub">Sign in to access the analytics dashboard</p>
+    <div class="login-card fade-in">
+      <div class="login-brand">
+        <div class="login-brand-mark">SQ</div>
+        <div class="login-brand-info">
+          <div class="login-brand-name">SocialIQ</div>
+          <div class="login-brand-sub">Social Media Intelligence Platform</div>
+        </div>
+      </div>
+
+      <div>
+        <h1 class="login-title">Welcome back</h1>
+        <p class="login-sub">Sign in to access the analytics dashboard</p>
+      </div>
+
+      <span class="demo-badge">⚡ Demo Mode — No real data required</span>
+
+      <form class="login-form" id="loginForm">
+        <div class="login-field">
+          <label for="loginUser">Username</label>
+          <input id="loginUser" type="text" placeholder="Enter any username (e.g. Analyst)" autocomplete="username" required>
+        </div>
+        <div class="login-field password-field">
+          <label for="loginPass">Password</label>
+          <div class="password-input-wrap">
+            <input id="loginPass" type="password" placeholder="Enter any password (e.g. demo123)" autocomplete="current-password" required>
+            <button type="button" class="password-toggle-btn" id="togglePasswordBtn" title="Show password" aria-label="Toggle password visibility">
+              <svg class="eye-icon eye-show" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+              <svg class="eye-icon eye-hide hidden" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                <line x1="1" y1="1" x2="23" y2="23"></line>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <button class="login-btn" id="loginBtn" type="submit">Sign in →</button>
+      </form>
+
+      <p class="login-footer">Smart India Hackathon 2026 · Problem Statement 26152<br>Social Media Analytics System · Team NEXORA</p>
     </div>
 
-    <span class="demo-badge">⚡ Demo Mode — No real data required</span>
-
-    <form class="login-form" id="loginForm" onsubmit="return false;">
-      <div class="login-field">
-        <label for="loginUser">Username</label>
-        <input id="loginUser" type="text" placeholder="Enter any username" autocomplete="off" required>
-      </div>
-      <div class="login-field">
-        <label for="loginPass">Password</label>
-        <input id="loginPass" type="password" placeholder="Enter any password" autocomplete="off" required>
-      </div>
-      <button class="login-btn" id="loginBtn" type="submit">Sign in →</button>
-    </form>
-
-    <p class="login-footer">Smart India Hackathon 2024 · Problem Statement 26152<br>Social Media Analytics System · Team SIH-26152</p>
   </div>
 </div>
 
@@ -144,8 +166,10 @@
           <span class="plat-dot" id="platDot" style="background:var(--accent)"></span>
           <select id="platformSelect" class="platform-select">
             <option value="All Platforms">All Platforms</option>
-            <option value="Instagram">Instagram</option>
             <option value="YouTube">YouTube</option>
+            <option value="Telegram">Telegram</option>
+            <option value="Reddit">Reddit</option>
+            <option value="Instagram">Instagram</option>
             <option value="Facebook">Facebook</option>
             <option value="Twitter / X">Twitter / X</option>
           </select>
@@ -168,6 +192,9 @@
       </div>
     </div>
 
+    <!-- PLATFORM NOTICE BANNER -->
+    <div id="platformNotice" class="platform-notice hidden" role="region" aria-label="Platform capability notice"></div>
+
     <!-- DYNAMIC CONTENT -->
     <div class="content-area" id="contentArea">
       <!-- Rendered by JS -->
@@ -176,6 +203,9 @@
   </main>
 
 </div>
+
+<!-- ALL PLATFORMS CAPABILITY MODAL -->
+<div id="allPlatformsModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="allPlatModalTitle"></div>
 
 <!-- POPOVER HOST -->
 <div id="popoverRoot" class="popover-root"></div>

@@ -226,6 +226,11 @@ class DemoGeneralProvider:
 
 
 def get_general_provider(data_mode: str) -> GeneralDataProvider:
+    if data_mode == "live":
+        from backend.connectors.registry import get_registry
+        from backend.services.live_provider import LiveGeneralProvider
+        return LiveGeneralProvider(get_registry())
     if data_mode == "demo":
         return DemoGeneralProvider()
     return EmptyGeneralProvider()
+
