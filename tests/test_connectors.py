@@ -454,3 +454,129 @@ def test_compute_real_metrics_multi_platform():
     assert metrics["content_volume"] == 3
     assert metrics["engagement_rate"] > 0
 
+
+# ---------------------------------------------------------------------------
+# 10. Twitter / X Connector Tests (Stage 3D)
+# ---------------------------------------------------------------------------
+
+def test_twitter_connector_unconfigured():
+    from backend.connectors.twitter_connector import TwitterConnector
+
+    conn = TwitterConnector(bearer_token="")
+    health = conn.check_health()
+    assert health.status == PlatformStatus.UNAVAILABLE
+    assert "paid credits" in health.reason.lower() or "bearer token" in health.reason.lower()
+
+
+def test_twitter_search_unconfigured_returns_empty():
+    import asyncio
+    from backend.connectors.twitter_connector import TwitterConnector
+
+    conn = TwitterConnector(bearer_token="")
+    records = asyncio.run(conn.search("AI innovation"))
+    assert records == []
+
+
+def test_twitter_comments_unconfigured_returns_empty():
+    import asyncio
+    from backend.connectors.twitter_connector import TwitterConnector
+
+    conn = TwitterConnector(bearer_token="")
+    records = asyncio.run(conn.fetch_comments("1234567890"))
+    assert records == []
+
+
+def test_twitter_tweet_parsing_to_social_records():
+    from backend.connectors.twitter_connector import TwitterConnector
+
+    sample_payload = {
+        "data": [
+            {
+                "id": "1892837465",
+                "text": "Exciting updates in #AI and higher education reform! Check it out.",
+                "author_id": "98765",
+                "created_at": "2026-08-27T07:15:00.000Z",
+                "public_metrics": {
+                    "retweet_count": 45,
+                    "reply_count": 12,
+                    "like_count": 280,
+                    "impression_count": 4500,
+                },
+                "entities": {
+                    "hashtags": [{"tag": "AI"}, {"tag": "EdTech"}]
+                }
+            }
+        ],
+        "includes": {
+            "users": [
+                {"id": "98765", "username": "sih_analyst", "name": "SIH Analyst"}
+            ]
+        }
+    }
+
+    conn = TwitterConnector(bearer_token="mock_token")
+    records = conn._parse_tweets(sample_payload)
+    assert len(records) == 1
+    rec = records[0]
+    assert rec.platform == "Twitter / X"
+    assert rec.content_id == "tw_1892837465"
+    assert "higher education" in rec.text
+    assert rec.author_name == "@sih_analyst"
+    assert rec.engagement["likes"] == 280
+    assert rec.engagement["shares"] == 45
+    assert rec.engagement["comments"] == 12
+    assert "AI" in rec.topic_keywords
+    assert rec.source_url == "https://x.com/sih_analyst/status/1892837465"
+
+
+# ---------------------------------------------------------------------------
+# 11. Instagram & Facebook Connector Tests (Stage 3D)
+# ---------------------------------------------------------------------------
+
+def test_instagram_connector_unconfigured():
+    from backend.connectors.meta_connectors import InstagramConnector
+
+    conn = InstagramConnector()
+    health = conn.check_health()
+    assert health.status == PlatformStatus.UNAVAILABLE
+    assert "meta app review" in health.reason.lower()
+
+
+def test_facebook_connector_unconfigured():
+    from backend.connectors.meta_connectors import FacebookConnector
+
+    conn = FacebookConnector()
+    health = conn.check_health()
+    assert health.status == PlatformStatus.UNAVAILABLE
+    assert "meta app review" in health.reason.lower()
+
+
+def test_meta_connectors_unconfigured_return_empty():
+    import asyncio
+    from backend.connectors.meta_connectors import InstagramConnector, FacebookConnector
+
+    ig = InstagramConnector()
+    fb = FacebookConnector()
+
+    assert asyncio.run(ig.search("test")) == []
+    assert asyncio.run(ig.fetch_comments("123")) == []
+    assert asyncio.run(fb.search("test")) == []
+    assert asyncio.run(fb.fetch_comments("123")) == []
+
+
+# ---------------------------------------------------------------------------
+# 12. Full 6-Platform Registry Verification
+# ---------------------------------------------------------------------------
+
+def test_full_6_platform_registry_initialization():
+    from backend.connectors.registry import get_registry
+
+    reg = get_registry()
+    all_caps = reg.all_capabilities()
+    expected_platforms = ["YouTube", "Telegram", "Reddit", "Twitter / X", "Instagram", "Facebook"]
+
+    for plat in expected_platforms:
+        assert plat in all_caps, f"Platform {plat} missing from registry"
+        assert reg.get_connector(plat) is not None, f"Connector {plat} not registered"
+
+

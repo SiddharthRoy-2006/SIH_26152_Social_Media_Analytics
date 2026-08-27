@@ -464,6 +464,56 @@ function closeAllPlatformsModal() {
   if (modal) modal.classList.add('hidden');
 }
 
+function showPlatformCapabilityModal(platform) {
+  const modal = $('allPlatformsModal');
+  if (!modal) return;
+
+  const cap = state.platformCapabilities ? state.platformCapabilities[platform] : null;
+  const reason = cap?.reason || 'Live API access requires verified business credentials and platform permissions.';
+  const icon = platform === 'Instagram' ? '📷' : platform === 'Facebook' ? '👤' : '🔒';
+
+  modal.innerHTML = `
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2 id="allPlatModalTitle">${icon} ${esc(platform)} Access Notice</h2>
+        <button class="modal-close-btn" onclick="closeAllPlatformsModal()" title="Close">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="modal-subtitle">
+          <strong>Integration Scope:</strong> ${esc(reason)}
+        </div>
+        <div class="platform-notice warning" style="margin-top:14px;margin-bottom:8px;">
+          <div class="platform-notice-content">
+            <span class="platform-notice-icon">ℹ️</span>
+            <div>In compliance with platform developer policies and security standards, only authorized public content can be retrieved. Dashboard analytics will display available data streams with AI intelligence.</div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <div class="modal-timer-note" id="modalCountdown">Auto-closing in 60s…</div>
+        <div class="modal-actions">
+          <button class="modal-btn-cancel" onclick="closeAllPlatformsModal()">Close</button>
+          <button class="modal-btn-proceed" onclick="closeAllPlatformsModal()">Proceed with Available</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  modal.classList.remove('hidden');
+
+  if (_allPlatModalTimer) clearInterval(_allPlatModalTimer);
+  let secondsLeft = 60;
+  const countdownEl = $('modalCountdown');
+  _allPlatModalTimer = setInterval(() => {
+    secondsLeft--;
+    if (countdownEl) countdownEl.textContent = `Auto-closing in ${secondsLeft}s…`;
+    if (secondsLeft <= 0) {
+      closeAllPlatformsModal();
+    }
+  }, 1000);
+}
+
+
 async function loadData() {
   if (_isLoadingData) return;
   _isLoadingData = true;
@@ -2382,6 +2432,11 @@ function setupControls() {
     checkPlatformNotice(state.platform);
     if (state.platform === 'All Platforms') {
       showAllPlatformsModal();
+    } else if (state.platform === 'Instagram' || state.platform === 'Facebook') {
+      const cap = state.platformCapabilities ? state.platformCapabilities[state.platform] : null;
+      if (!cap || cap.status === 'unavailable' || cap.status === 'not_configured') {
+        showPlatformCapabilityModal(state.platform);
+      }
     }
     loadData();
   });
@@ -2560,6 +2615,7 @@ window.hideAutocomplete = hideAutocomplete;
 window.togglePasswordVisibility = togglePasswordVisibility;
 window.dismissPlatformNotice = dismissPlatformNotice;
 window.showAllPlatformsModal = showAllPlatformsModal;
+window.showPlatformCapabilityModal = showPlatformCapabilityModal;
 window.closeAllPlatformsModal = closeAllPlatformsModal;
 
 /* ================================================================

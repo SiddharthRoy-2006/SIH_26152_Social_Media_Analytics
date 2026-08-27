@@ -166,6 +166,8 @@ def get_registry() -> ConnectorRegistry:
         from backend.connectors.youtube_connector import YouTubeConnector
         from backend.connectors.telegram_connector import TelegramConnector
         from backend.connectors.reddit_connector import RedditConnector
+        from backend.connectors.twitter_connector import TwitterConnector
+        from backend.connectors.meta_connectors import InstagramConnector, FacebookConnector
         from backend.core.config import settings
 
         reg = ConnectorRegistry()
@@ -178,11 +180,20 @@ def get_registry() -> ConnectorRegistry:
             client_id=settings.reddit_client_id,
             client_secret=settings.reddit_client_secret,
         )
+        twitter_conn = TwitterConnector(
+            bearer_token=settings.twitter_bearer_token,
+        )
+        instagram_conn = InstagramConnector()
+        facebook_conn = FacebookConnector()
 
         reg.register(youtube_conn)
         reg.register(telegram_conn)
         reg.register(reddit_conn)
+        reg.register(twitter_conn)
+        reg.register(instagram_conn)
+        reg.register(facebook_conn)
         _global_registry = reg
     return _global_registry
+
 
 
