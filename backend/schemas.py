@@ -111,3 +111,41 @@ class HealthResponse(BaseModel):
     version: str
     platforms: dict[str, Any] = Field(default_factory=dict)
 
+
+# ---------------------------------------------------------------------------
+# Credential & Connection Testing Models
+# ---------------------------------------------------------------------------
+
+class CredentialTestRequest(BaseModel):
+    platform: str
+    credentials: dict[str, str] = Field(default_factory=dict)
+
+
+class CredentialSaveRequest(BaseModel):
+    platform: str
+    credentials: dict[str, str] = Field(default_factory=dict)
+
+
+class CredentialClearRequest(BaseModel):
+    platform: str
+
+
+class CredentialStatusResponse(BaseModel):
+    platform: str
+    status: str                         # "connected" | "limited" | "not_configured" | "unavailable" | "error" | "rate_limited"
+    source: str                         # "live" | "demo" | "empty" | "unavailable" | "error"
+    configured: bool
+    live: bool
+    message: str
+    detail: str | None = None
+    available_data: list[str] = Field(default_factory=list)
+    credential_fields: list[str] = Field(default_factory=list)
+    approx_test_time: str = "A few seconds"
+    last_checked: str | None = None
+    last_successful: str | None = None
+
+
+class AllCredentialsStatusResponse(BaseModel):
+    platforms: dict[str, CredentialStatusResponse] = Field(default_factory=dict)
+
+

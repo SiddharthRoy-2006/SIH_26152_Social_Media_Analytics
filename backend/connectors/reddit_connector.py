@@ -67,6 +67,22 @@ class RedditConnector(PlatformConnector):
     def platform_name(self) -> str:
         return "Reddit"
 
+    def update_credentials(self, credentials: dict[str, str]) -> None:
+        if "client_id" in credentials:
+            self._client_id = credentials["client_id"].strip()
+        if "client_secret" in credentials:
+            self._client_secret = credentials["client_secret"].strip()
+        self._access_token = None
+        self._token_expires_at = None
+        self._cache.clear()
+
+    def clear_credentials(self) -> None:
+        self._client_id = ""
+        self._client_secret = ""
+        self._access_token = None
+        self._token_expires_at = None
+        self._cache.clear()
+
     def check_health(self) -> PlatformCapability:
         now = datetime.now(timezone.utc)
 
@@ -74,7 +90,9 @@ class RedditConnector(PlatformConnector):
             return PlatformCapability(
                 platform="Reddit",
                 status=PlatformStatus.NOT_CONFIGURED,
-                reason="Reddit API credentials not configured. Set REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET.",
+                reason="Reddit OAuth Client ID and Client Secret are not configured.",
+                credential_fields=["client_id", "client_secret"],
+                approx_test_time="1-3 seconds",
                 available_data=["subreddit_search", "posts", "comments"],
                 last_checked=now,
             )
@@ -83,7 +101,9 @@ class RedditConnector(PlatformConnector):
             return PlatformCapability(
                 platform="Reddit",
                 status=PlatformStatus.NOT_CONFIGURED,
-                reason="Incomplete Reddit credentials: both REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET are required.",
+                reason="Incomplete Reddit credentials: both Reddit OAuth Client ID and Client Secret are required.",
+                credential_fields=["client_id", "client_secret"],
+                approx_test_time="1-3 seconds",
                 available_data=["subreddit_search", "posts", "comments"],
                 last_checked=now,
             )
@@ -96,6 +116,8 @@ class RedditConnector(PlatformConnector):
                     status=PlatformStatus.CONNECTED,
                     reason="Reddit OAuth2 API connected and operational.",
                     available_data=["subreddit_search", "posts", "comments"],
+                    credential_fields=["client_id", "client_secret"],
+                    approx_test_time="1-3 seconds",
                     last_checked=now,
                     last_successful=now,
                 )
@@ -103,8 +125,10 @@ class RedditConnector(PlatformConnector):
                 return PlatformCapability(
                     platform="Reddit",
                     status=PlatformStatus.ERROR,
-                    reason="Reddit OAuth2 authentication failed with provided credentials.",
+                    reason="Reddit OAuth2 authentication failed with provided Client ID / Secret.",
                     available_data=["subreddit_search", "posts", "comments"],
+                    credential_fields=["client_id", "client_secret"],
+                    approx_test_time="1-3 seconds",
                     last_checked=now,
                     error_detail="Authentication token request returned no token",
                 )
@@ -122,6 +146,8 @@ class RedditConnector(PlatformConnector):
                 status=status,
                 reason=reason,
                 available_data=["subreddit_search", "posts", "comments"],
+                credential_fields=["client_id", "client_secret"],
+                approx_test_time="1-3 seconds",
                 last_checked=now,
                 error_detail=f"HTTP {exc.response.status_code}",
             )
@@ -131,9 +157,12 @@ class RedditConnector(PlatformConnector):
                 status=PlatformStatus.ERROR,
                 reason=f"Reddit probe failed: {str(exc)[:120]}",
                 available_data=["subreddit_search", "posts", "comments"],
+                credential_fields=["client_id", "client_secret"],
+                approx_test_time="1-3 seconds",
                 last_checked=now,
                 error_detail=str(exc)[:200],
             )
+
 
     async def search(
         self,

@@ -58,6 +58,21 @@ class TelegramConnector(PlatformConnector):
     def platform_name(self) -> str:
         return "Telegram"
 
+    def update_credentials(self, credentials: dict[str, str]) -> None:
+        if "api_id" in credentials:
+            self._api_id = credentials["api_id"].strip()
+        if "api_hash" in credentials:
+            self._api_hash = credentials["api_hash"].strip()
+        if "bot_token" in credentials:
+            self._bot_token = credentials["bot_token"].strip()
+        self._cache.clear()
+
+    def clear_credentials(self) -> None:
+        self._api_id = ""
+        self._api_hash = ""
+        self._bot_token = ""
+        self._cache.clear()
+
     def check_health(self) -> PlatformCapability:
         now = datetime.now(timezone.utc)
 
@@ -66,7 +81,9 @@ class TelegramConnector(PlatformConnector):
             return PlatformCapability(
                 platform="Telegram",
                 status=PlatformStatus.NOT_CONFIGURED,
-                reason="Telegram MTProto credentials not configured. Set TELEGRAM_API_ID and TELEGRAM_API_HASH.",
+                reason="Telegram MTProto API ID and API Hash are not configured.",
+                credential_fields=["api_id", "api_hash"],
+                approx_test_time="1-3 seconds",
                 available_data=["public_channel_search", "messages"],
                 last_checked=now,
             )
@@ -75,7 +92,9 @@ class TelegramConnector(PlatformConnector):
             return PlatformCapability(
                 platform="Telegram",
                 status=PlatformStatus.NOT_CONFIGURED,
-                reason="Incomplete Telegram credentials: both TELEGRAM_API_ID and TELEGRAM_API_HASH are required.",
+                reason="Incomplete Telegram credentials: both Telegram MTProto API ID and API Hash are required.",
+                credential_fields=["api_id", "api_hash"],
+                approx_test_time="1-3 seconds",
                 available_data=["public_channel_search", "messages"],
                 last_checked=now,
             )
@@ -92,6 +111,8 @@ class TelegramConnector(PlatformConnector):
                             status=PlatformStatus.CONNECTED,
                             reason="Telegram Bot API connected and operational.",
                             available_data=["public_channel_search", "messages", "replies"],
+                            credential_fields=["api_id", "api_hash"],
+                            approx_test_time="1-3 seconds",
                             last_checked=now,
                             last_successful=now,
                         )
@@ -101,6 +122,8 @@ class TelegramConnector(PlatformConnector):
                             status=PlatformStatus.RATE_LIMITED,
                             reason="Telegram API rate limit (flood wait) encountered.",
                             available_data=["public_channel_search", "messages"],
+                            credential_fields=["api_id", "api_hash"],
+                            approx_test_time="1-3 seconds",
                             last_checked=now,
                             error_detail="HTTP 429 Flood Wait",
                         )
@@ -108,8 +131,10 @@ class TelegramConnector(PlatformConnector):
                         return PlatformCapability(
                             platform="Telegram",
                             status=PlatformStatus.ERROR,
-                            reason="Telegram Bot API returned non-200 response.",
+                            reason="Telegram Bot API returned invalid credentials / unauthorized response.",
                             available_data=["public_channel_search", "messages"],
+                            credential_fields=["api_id", "api_hash"],
+                            approx_test_time="1-3 seconds",
                             last_checked=now,
                             error_detail=f"HTTP {resp.status_code}",
                         )
@@ -121,6 +146,8 @@ class TelegramConnector(PlatformConnector):
                     status=PlatformStatus.CONNECTED,
                     reason="Telegram MTProto configuration is active and ready for public channel ingestion.",
                     available_data=["public_channel_search", "messages", "replies"],
+                    credential_fields=["api_id", "api_hash"],
+                    approx_test_time="1-3 seconds",
                     last_checked=now,
                     last_successful=now,
                 )
@@ -130,6 +157,8 @@ class TelegramConnector(PlatformConnector):
                     status=PlatformStatus.ERROR,
                     reason="Telegram API ID or Hash format is invalid.",
                     available_data=["public_channel_search", "messages"],
+                    credential_fields=["api_id", "api_hash"],
+                    approx_test_time="1-3 seconds",
                     last_checked=now,
                     error_detail="Invalid credential lengths",
                 )
@@ -141,9 +170,12 @@ class TelegramConnector(PlatformConnector):
                 status=PlatformStatus.ERROR,
                 reason=f"Telegram connection probe failed: {str(exc)[:120]}",
                 available_data=["public_channel_search", "messages"],
+                credential_fields=["api_id", "api_hash"],
+                approx_test_time="1-3 seconds",
                 last_checked=now,
                 error_detail=str(exc)[:200],
             )
+
 
     async def search(
         self,

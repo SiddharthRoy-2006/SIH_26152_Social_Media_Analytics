@@ -56,6 +56,15 @@ class TwitterConnector(PlatformConnector):
     def platform_name(self) -> str:
         return "Twitter / X"
 
+    def update_credentials(self, credentials: dict[str, str]) -> None:
+        if "bearer_token" in credentials:
+            self._bearer_token = credentials["bearer_token"].strip()
+        self._cache.clear()
+
+    def clear_credentials(self) -> None:
+        self._bearer_token = ""
+        self._cache.clear()
+
     def check_health(self) -> PlatformCapability:
         now = datetime.now(timezone.utc)
 
@@ -63,13 +72,15 @@ class TwitterConnector(PlatformConnector):
             return PlatformCapability(
                 platform="Twitter / X",
                 status=PlatformStatus.UNAVAILABLE,
-                reason="X API requires paid credits. Set TWITTER_BEARER_TOKEN to enable real-time search.",
+                reason="X API requires paid credits and a valid Bearer Token. No free tier is available.",
+                credential_fields=["bearer_token"],
+                approx_test_time="1-3 seconds",
                 available_data=[],
                 last_checked=now,
             )
 
         try:
-            # Probe with lightweight search or user lookup
+            # Probe with lightweight user lookup
             url = "https://api.twitter.com/2/users/by/username/TwitterDev"
             headers = {
                 "Authorization": f"Bearer {self._bearer_token}",
@@ -83,6 +94,8 @@ class TwitterConnector(PlatformConnector):
                         status=PlatformStatus.CONNECTED,
                         reason="X API v2 bearer token verified and operational.",
                         available_data=["recent_search", "tweet_metrics", "conversations"],
+                        credential_fields=["bearer_token"],
+                        approx_test_time="1-3 seconds",
                         last_checked=now,
                         last_successful=now,
                     )
@@ -92,15 +105,25 @@ class TwitterConnector(PlatformConnector):
                         status=PlatformStatus.RATE_LIMITED,
                         reason="X API rate limit encountered. 15-minute window cooldown active.",
                         available_data=["recent_search"],
+                        credential_fields=["bearer_token"],
+                        approx_test_time="1-3 seconds",
                         last_checked=now,
                         error_detail="HTTP 429 Rate Limit",
                     )
                 elif resp.status_code in (401, 403):
+                    # Check if error response mentions credits/billing
+                    body = resp.text.lower()
+                    if "credit" in body or "usage" in body or "billing" in body:
+                        reason = "X API credits exhausted or pay-per-use billing required."
+                    else:
+                        reason = "X API Bearer Token is invalid or does not have v2 access permissions."
                     return PlatformCapability(
                         platform="Twitter / X",
                         status=PlatformStatus.ERROR,
-                        reason="X API bearer token is invalid or does not have v2 access permissions.",
+                        reason=reason,
                         available_data=[],
+                        credential_fields=["bearer_token"],
+                        approx_test_time="1-3 seconds",
                         last_checked=now,
                         error_detail=f"HTTP {resp.status_code}",
                     )
@@ -110,6 +133,8 @@ class TwitterConnector(PlatformConnector):
                         status=PlatformStatus.ERROR,
                         reason=f"X API probe returned HTTP {resp.status_code}.",
                         available_data=[],
+                        credential_fields=["bearer_token"],
+                        approx_test_time="1-3 seconds",
                         last_checked=now,
                         error_detail=f"HTTP {resp.status_code}",
                     )
@@ -120,9 +145,12 @@ class TwitterConnector(PlatformConnector):
                 status=PlatformStatus.ERROR,
                 reason=f"X API connection failed: {str(exc)[:120]}",
                 available_data=[],
+                credential_fields=["bearer_token"],
+                approx_test_time="1-3 seconds",
                 last_checked=now,
                 error_detail=str(exc)[:200],
             )
+
 
     async def search(
         self,

@@ -11,7 +11,7 @@ The registry holds all configured connectors and exposes:
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from backend.connectors.base import (
@@ -93,7 +93,7 @@ class ConnectorRegistry:
                 platform=name,
                 status=PlatformStatus.ERROR,
                 reason=f"Health check failed: {exc}",
-                last_checked=datetime.utcnow(),
+                last_checked=datetime.now(timezone.utc),
                 error_detail=str(exc),
             )
 
@@ -134,11 +134,68 @@ class ConnectorRegistry:
                 platform=platform,
                 status=PlatformStatus.ERROR,
                 reason=f"Health check failed: {exc}",
-                last_checked=datetime.utcnow(),
+                last_checked=datetime.now(timezone.utc),
                 error_detail=str(exc),
             )
             self._capabilities[platform] = cap
             return cap
+
+    def update_credentials(self, platform: str, credentials: dict[str, str]) -> PlatformCapability:
+        """Update credentials for *platform* connector and probe health immediately."""
+        connector = self._connectors.get(platform)
+        if connector is None:
+            cap = PlatformCapability(
+                platform=platform,
+                status=PlatformStatus.NOT_CONFIGURED,
+                reason=f"No connector registered for {platform}.",
+                last_checked=datetime.now(timezone.utc),
+            )
+            self._capabilities[platform] = cap
+            return cap
+
+        try:
+            connector.update_credentials(credentials)
+            cap = connector.check_health()
+            self._capabilities[platform] = cap
+            return cap
+        except Exception as exc:
+            cap = PlatformCapability(
+                platform=platform,
+                status=PlatformStatus.ERROR,
+                reason=f"Credential test failed: {exc}",
+                last_checked=datetime.now(timezone.utc),
+                error_detail=str(exc),
+            )
+            self._capabilities[platform] = cap
+            return cap
+
+    def clear_credentials(self, platform: str) -> PlatformCapability:
+        """Clear credentials for *platform* connector and probe health."""
+        connector = self._connectors.get(platform)
+        if connector is None:
+            return self.get_capability(platform)
+
+        try:
+            connector.clear_credentials()
+            cap = connector.check_health()
+            self._capabilities[platform] = cap
+            return cap
+        except Exception as exc:
+            cap = PlatformCapability(
+                platform=platform,
+                status=PlatformStatus.ERROR,
+                reason=f"Error clearing credentials: {exc}",
+                last_checked=datetime.now(timezone.utc),
+                error_detail=str(exc),
+            )
+            self._capabilities[platform] = cap
+            return cap
+
+    def test_credentials(self, platform: str, credentials: dict[str, str] | None = None) -> PlatformCapability:
+        """Test credentials for *platform*."""
+        if credentials:
+            return self.update_credentials(platform, credentials)
+        return self.refresh_health(platform)
 
     def connected_platforms(self) -> list[str]:
         """Return names of platforms with CONNECTED or LIMITED status."""
@@ -175,6 +232,7 @@ def get_registry() -> ConnectorRegistry:
         telegram_conn = TelegramConnector(
             api_id=settings.telegram_api_id,
             api_hash=settings.telegram_api_hash,
+            bot_token=settings.telegram_bot_token,
         )
         reddit_conn = RedditConnector(
             client_id=settings.reddit_client_id,
@@ -183,8 +241,14 @@ def get_registry() -> ConnectorRegistry:
         twitter_conn = TwitterConnector(
             bearer_token=settings.twitter_bearer_token,
         )
-        instagram_conn = InstagramConnector()
-        facebook_conn = FacebookConnector()
+        instagram_conn = InstagramConnector(
+            access_token=settings.instagram_access_token,
+            instagram_account_id=settings.instagram_account_id,
+        )
+        facebook_conn = FacebookConnector(
+            access_token=settings.facebook_access_token,
+            page_id=settings.facebook_page_id,
+        )
 
         reg.register(youtube_conn)
         reg.register(telegram_conn)
@@ -194,6 +258,7 @@ def get_registry() -> ConnectorRegistry:
         reg.register(facebook_conn)
         _global_registry = reg
     return _global_registry
+
 
 
 

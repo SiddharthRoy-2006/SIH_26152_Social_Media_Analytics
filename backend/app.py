@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from backend.core.config import settings
 from backend.routes.analysis import router as analysis_router
+from backend.routes.credentials import router as credentials_router
 from backend.routes.general import router as general_router
 from backend.schemas import HealthResponse
 
@@ -18,6 +19,8 @@ app.add_middleware(
 
 app.include_router(analysis_router)
 app.include_router(general_router)
+app.include_router(credentials_router)
+
 
 
 @app.get("/")

@@ -42,31 +42,99 @@ class InstagramConnector(PlatformConnector):
         self._account_id = instagram_account_id.strip() if instagram_account_id else ""
         self._cache: dict[str, tuple[datetime, list[SocialRecord]]] = {}
         self._cache_ttl = timedelta(minutes=15)
+        self._http_timeout = 8.0
 
     @property
     def platform_name(self) -> str:
         return "Instagram"
 
+    def update_credentials(self, credentials: dict[str, str]) -> None:
+        if "access_token" in credentials:
+            self._access_token = credentials["access_token"].strip()
+        if "account_id" in credentials:
+            self._account_id = credentials["account_id"].strip()
+        self._cache.clear()
+
+    def clear_credentials(self) -> None:
+        self._access_token = ""
+        self._account_id = ""
+        self._cache.clear()
+
     def check_health(self) -> PlatformCapability:
         now = datetime.now(timezone.utc)
 
-        if not self._access_token or not self._account_id:
+        if not self._access_token and not self._account_id:
             return PlatformCapability(
                 platform="Instagram",
                 status=PlatformStatus.UNAVAILABLE,
-                reason="Requires Meta App Review and an active Instagram Business/Creator account.",
+                reason="Requires Meta App Review and an active Instagram Professional Account.",
+                credential_fields=["access_token", "account_id"],
+                approx_test_time="1-3 seconds",
                 available_data=[],
                 last_checked=now,
             )
 
-        return PlatformCapability(
-            platform="Instagram",
-            status=PlatformStatus.CONNECTED,
-            reason="Instagram Graph API connected with Business Account access.",
-            available_data=["hashtag_search", "business_discovery", "comments"],
-            last_checked=now,
-            last_successful=now,
-        )
+        if not self._access_token or not self._account_id:
+            return PlatformCapability(
+                platform="Instagram",
+                status=PlatformStatus.NOT_CONFIGURED,
+                reason="Incomplete Instagram credentials: both User/Page Access Token and Instagram Account ID are required.",
+                credential_fields=["access_token", "account_id"],
+                approx_test_time="1-3 seconds",
+                available_data=[],
+                last_checked=now,
+            )
+
+        try:
+            import httpx
+            url = f"https://graph.facebook.com/v19.0/{self._account_id}"
+            params = {"fields": "id,username,name", "access_token": self._access_token}
+            with httpx.Client(timeout=self._http_timeout) as client:
+                resp = client.get(url, params=params)
+                if resp.status_code == 200:
+                    return PlatformCapability(
+                        platform="Instagram",
+                        status=PlatformStatus.CONNECTED,
+                        reason="Instagram Graph API connected with Professional Account access.",
+                        available_data=["hashtag_search", "business_discovery", "comments"],
+                        credential_fields=["access_token", "account_id"],
+                        approx_test_time="1-3 seconds",
+                        last_checked=now,
+                        last_successful=now,
+                    )
+                elif resp.status_code == 429:
+                    return PlatformCapability(
+                        platform="Instagram",
+                        status=PlatformStatus.RATE_LIMITED,
+                        reason="Meta Graph API rate limit reached.",
+                        available_data=[],
+                        credential_fields=["access_token", "account_id"],
+                        approx_test_time="1-3 seconds",
+                        last_checked=now,
+                        error_detail="HTTP 429 Rate Limit",
+                    )
+                else:
+                    return PlatformCapability(
+                        platform="Instagram",
+                        status=PlatformStatus.ERROR,
+                        reason="Meta Graph API authorization failed (invalid token or missing permissions).",
+                        available_data=[],
+                        credential_fields=["access_token", "account_id"],
+                        approx_test_time="1-3 seconds",
+                        last_checked=now,
+                        error_detail=f"HTTP {resp.status_code}",
+                    )
+        except Exception as exc:
+            return PlatformCapability(
+                platform="Instagram",
+                status=PlatformStatus.ERROR,
+                reason=f"Instagram probe failed: {str(exc)[:120]}",
+                available_data=[],
+                credential_fields=["access_token", "account_id"],
+                approx_test_time="1-3 seconds",
+                last_checked=now,
+                error_detail=str(exc)[:200],
+            )
 
     async def search(
         self,
@@ -78,7 +146,6 @@ class InstagramConnector(PlatformConnector):
         """Search Instagram public hashtags or business discovery when configured."""
         if not self._access_token or not self._account_id:
             return []
-        # Return empty when live Meta credentials are unconfigured
         return []
 
     async def fetch_comments(
@@ -105,31 +172,99 @@ class FacebookConnector(PlatformConnector):
         self._page_id = page_id.strip() if page_id else ""
         self._cache: dict[str, tuple[datetime, list[SocialRecord]]] = {}
         self._cache_ttl = timedelta(minutes=15)
+        self._http_timeout = 8.0
 
     @property
     def platform_name(self) -> str:
         return "Facebook"
 
+    def update_credentials(self, credentials: dict[str, str]) -> None:
+        if "access_token" in credentials:
+            self._access_token = credentials["access_token"].strip()
+        if "page_id" in credentials:
+            self._page_id = credentials["page_id"].strip()
+        self._cache.clear()
+
+    def clear_credentials(self) -> None:
+        self._access_token = ""
+        self._page_id = ""
+        self._cache.clear()
+
     def check_health(self) -> PlatformCapability:
         now = datetime.now(timezone.utc)
 
-        if not self._access_token or not self._page_id:
+        if not self._access_token and not self._page_id:
             return PlatformCapability(
                 platform="Facebook",
                 status=PlatformStatus.UNAVAILABLE,
                 reason="Requires Meta App Review and Page Public Content Access.",
+                credential_fields=["access_token", "page_id"],
+                approx_test_time="1-3 seconds",
                 available_data=[],
                 last_checked=now,
             )
 
-        return PlatformCapability(
-            platform="Facebook",
-            status=PlatformStatus.CONNECTED,
-            reason="Facebook Graph API connected with Page Access.",
-            available_data=["page_feed", "post_metrics", "comments"],
-            last_checked=now,
-            last_successful=now,
-        )
+        if not self._access_token or not self._page_id:
+            return PlatformCapability(
+                platform="Facebook",
+                status=PlatformStatus.NOT_CONFIGURED,
+                reason="Incomplete Facebook credentials: both Page Access Token and Page ID are required.",
+                credential_fields=["access_token", "page_id"],
+                approx_test_time="1-3 seconds",
+                available_data=[],
+                last_checked=now,
+            )
+
+        try:
+            import httpx
+            url = f"https://graph.facebook.com/v19.0/{self._page_id}"
+            params = {"fields": "id,name", "access_token": self._access_token}
+            with httpx.Client(timeout=self._http_timeout) as client:
+                resp = client.get(url, params=params)
+                if resp.status_code == 200:
+                    return PlatformCapability(
+                        platform="Facebook",
+                        status=PlatformStatus.CONNECTED,
+                        reason="Facebook Graph API connected with Page Access.",
+                        available_data=["page_feed", "post_metrics", "comments"],
+                        credential_fields=["access_token", "page_id"],
+                        approx_test_time="1-3 seconds",
+                        last_checked=now,
+                        last_successful=now,
+                    )
+                elif resp.status_code == 429:
+                    return PlatformCapability(
+                        platform="Facebook",
+                        status=PlatformStatus.RATE_LIMITED,
+                        reason="Meta Graph API rate limit reached.",
+                        available_data=[],
+                        credential_fields=["access_token", "page_id"],
+                        approx_test_time="1-3 seconds",
+                        last_checked=now,
+                        error_detail="HTTP 429 Rate Limit",
+                    )
+                else:
+                    return PlatformCapability(
+                        platform="Facebook",
+                        status=PlatformStatus.ERROR,
+                        reason="Meta Graph API authorization failed (invalid Page Access Token or missing permissions).",
+                        available_data=[],
+                        credential_fields=["access_token", "page_id"],
+                        approx_test_time="1-3 seconds",
+                        last_checked=now,
+                        error_detail=f"HTTP {resp.status_code}",
+                    )
+        except Exception as exc:
+            return PlatformCapability(
+                platform="Facebook",
+                status=PlatformStatus.ERROR,
+                reason=f"Facebook probe failed: {str(exc)[:120]}",
+                available_data=[],
+                credential_fields=["access_token", "page_id"],
+                approx_test_time="1-3 seconds",
+                last_checked=now,
+                error_detail=str(exc)[:200],
+            )
 
     async def search(
         self,
@@ -153,3 +288,4 @@ class FacebookConnector(PlatformConnector):
         if not self._access_token:
             return []
         return []
+

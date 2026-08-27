@@ -32,9 +32,10 @@ def get_analysis(
     period: Period = "Last 30 Days",
     chart_period: ChartPeriod = "Monthly",
     refresh_tick: int = Query(default=0, ge=0),
+    demo: bool = Query(default=False),
     data_provider: PlatformDataProvider = Depends(provider),
 ) -> AnalysisResponse:
-    """Return campaign-specific data from the configured provider."""
+    """Return campaign-specific data from the configured provider or explicit demo fallback."""
     tick = refresh_tick if refresh_tick > 0 else _auto_tick()
     request = AnalysisRequest(
         topic=topic.strip(),
@@ -44,7 +45,8 @@ def get_analysis(
         chart_period=chart_period,
         refresh_tick=tick,
     )
-    return data_provider.get_analysis(request)
+    active_provider = get_provider("demo") if demo else data_provider
+    return active_provider.get_analysis(request)
 
 
 @router.get("/analytics", response_model=AnalysisResponse, deprecated=True)

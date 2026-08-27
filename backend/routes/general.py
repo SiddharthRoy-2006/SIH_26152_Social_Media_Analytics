@@ -29,9 +29,10 @@ def get_general(
     period: Period = "Last 30 Days",
     chart_period: ChartPeriod = "Monthly",
     refresh_tick: int = Query(default=0, ge=0),
+    demo: bool = Query(default=False),
     data_provider: GeneralDataProvider = Depends(provider),
 ) -> GeneralResponse:
-    """Return ecosystem-wide social-media intelligence (no topic required)."""
+    """Return ecosystem-wide social-media intelligence (no topic required) or explicit demo fallback."""
     tick = refresh_tick if refresh_tick > 0 else _auto_tick()
     request = GeneralRequest(
         platform=platform,
@@ -39,4 +40,5 @@ def get_general(
         chart_period=chart_period,
         refresh_tick=tick,
     )
-    return data_provider.get_general(request)
+    active_provider = get_general_provider("demo") if demo else data_provider
+    return active_provider.get_general(request)

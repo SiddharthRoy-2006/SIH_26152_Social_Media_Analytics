@@ -12,10 +12,30 @@ Core types for the platform connector layer:
 from __future__ import annotations
 
 import enum
+import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def sanitize_error(msg: str | None) -> str | None:
+    """Mask credentials, tokens, and sensitive URL params from error messages."""
+    if not msg:
+        return None
+    sanitized = re.sub(
+        r'([?&](?:key|api_key|token|access_token|secret|client_secret|api_id|api_hash)=)[^&\s"\']+',
+        r'\1[MASKED]',
+        msg,
+        flags=re.IGNORECASE,
+    )
+    sanitized = re.sub(r'(Bearer\s+)[A-Za-z0-9_\-\.]+', r'\1[MASKED]', sanitized, flags=re.IGNORECASE)
+    return sanitized
+
 
 
 # ---------------------------------------------------------------------------
@@ -37,7 +57,7 @@ class SocialRecord:
     engagement: dict[str, int] = field(default_factory=dict)  # likes, views, comments, …
     topic_keywords: list[str] = field(default_factory=list)    # Tags / extracted keywords
     source_url: str | None = None           # Direct link where appropriate
-    retrieval_time: datetime = field(default_factory=datetime.utcnow)
+    retrieval_time: datetime = field(default_factory=_utcnow)
     raw_metadata: dict[str, Any] = field(default_factory=dict) # Platform-specific extras
 
 
@@ -65,6 +85,8 @@ class PlatformCapability:
     status: PlatformStatus
     reason: str                                # Human-readable explanation
     available_data: list[str] = field(default_factory=list)  # e.g. ["search", "comments"]
+    credential_fields: list[str] = field(default_factory=list)
+    approx_test_time: str = "A few seconds"
     last_checked: datetime | None = None
     last_successful: datetime | None = None
     error_detail: str | None = None
@@ -75,10 +97,13 @@ class PlatformCapability:
             "status": self.status.value,
             "reason": self.reason,
             "available_data": self.available_data,
+            "credential_fields": self.credential_fields,
+            "approx_test_time": self.approx_test_time,
             "last_checked": self.last_checked.isoformat() if self.last_checked else None,
             "last_successful": self.last_successful.isoformat() if self.last_successful else None,
-            "error_detail": self.error_detail,
+            "error_detail": sanitize_error(self.error_detail),
         }
+
 
 
 # ---------------------------------------------------------------------------
@@ -90,7 +115,7 @@ class PlatformConnector(ABC):
     Abstract base for all social-media connectors.
 
     Each subclass wraps one platform's API and produces normalised
-    SocialRecord objects.  The connector also reports its own capability
+    SocialRecord objects. The connector also reports its own capability
     so the registry can surface per-platform status to the API/frontend.
     """
 
@@ -109,6 +134,14 @@ class PlatformConnector(ABC):
         test a health endpoint) — not a full data fetch.
         """
         ...
+
+    def update_credentials(self, credentials: dict[str, str]) -> None:
+        """Update runtime credentials for the connector."""
+        pass
+
+    def clear_credentials(self) -> None:
+        """Clear all stored credentials for this connector."""
+        pass
 
     @abstractmethod
     async def search(
@@ -139,3 +172,4 @@ class PlatformConnector(ABC):
         Returns normalised SocialRecord objects.
         """
         ...
+

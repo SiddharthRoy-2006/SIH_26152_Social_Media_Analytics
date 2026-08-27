@@ -29,6 +29,7 @@ from backend.connectors.base import (
     PlatformConnector,
     PlatformStatus,
     SocialRecord,
+    sanitize_error,
 )
 
 logger = logging.getLogger(__name__)
@@ -51,14 +52,27 @@ class YouTubeConnector(PlatformConnector):
     def platform_name(self) -> str:
         return "YouTube"
 
+    def update_credentials(self, credentials: dict[str, str]) -> None:
+        if "api_key" in credentials:
+            self._api_key = credentials["api_key"].strip()
+            self._service = None
+            self._cache.clear()
+
+    def clear_credentials(self) -> None:
+        self._api_key = ""
+        self._service = None
+        self._cache.clear()
+
     def check_health(self) -> PlatformCapability:
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         if not self._api_key:
             return PlatformCapability(
                 platform="YouTube",
                 status=PlatformStatus.NOT_CONFIGURED,
-                reason="YouTube API key is not configured. Set YOUTUBE_API_KEY.",
+                reason="YouTube Data API v3 API Key is not configured.",
+                credential_fields=["api_key"],
+                approx_test_time="1-3 seconds",
                 last_checked=now,
             )
 
@@ -69,30 +83,36 @@ class YouTubeConnector(PlatformConnector):
             return PlatformCapability(
                 platform="YouTube",
                 status=PlatformStatus.CONNECTED,
-                reason="YouTube API key is valid and operational.",
+                reason="YouTube Data API v3 API Key is valid and operational.",
                 available_data=["search", "video_details", "comments"],
+                credential_fields=["api_key"],
+                approx_test_time="1-3 seconds",
                 last_checked=now,
                 last_successful=now,
             )
         except Exception as exc:
-            error_msg = str(exc)
+            error_msg = sanitize_error(str(exc)) or str(exc)
             status = PlatformStatus.ERROR
-            reason = f"YouTube API probe failed: {error_msg[:120]}"
+            reason = "YouTube API key is invalid or request failed."
 
             if "quota" in error_msg.lower() or "rateLimitExceeded" in error_msg:
                 status = PlatformStatus.RATE_LIMITED
                 reason = "YouTube daily quota has been exceeded. Resets at midnight PT."
-            elif "forbidden" in error_msg.lower() or "accessNotConfigured" in error_msg:
+            elif "forbidden" in error_msg.lower() or "accessNotConfigured" in error_msg or "keyInvalid" in error_msg or "API key not valid" in error_msg:
                 status = PlatformStatus.ERROR
-                reason = "YouTube API key is invalid or the Data API v3 is not enabled."
+                reason = "YouTube API key is invalid or YouTube Data API v3 is not enabled."
 
             return PlatformCapability(
                 platform="YouTube",
                 status=status,
                 reason=reason,
+                credential_fields=["api_key"],
+                approx_test_time="1-3 seconds",
                 last_checked=now,
                 error_detail=error_msg[:200],
             )
+
+
 
     async def search(
         self,
@@ -309,10 +329,10 @@ class YouTubeConnector(PlatformConnector):
         if entry is None:
             return None
         cached_at, records = entry
-        if datetime.utcnow() - cached_at > self._cache_ttl:
+        if datetime.now(timezone.utc) - cached_at > self._cache_ttl:
             del self._cache[key]
             return None
         return records
 
     def _set_cached(self, key: str, records: list[SocialRecord]) -> None:
-        self._cache[key] = (datetime.utcnow(), records)
+        self._cache[key] = (datetime.now(timezone.utc), records)

@@ -4,4 +4,10 @@ __pycache__/
 venv/
 env/
 .env
+.env.*
+*.key
+*.token
+*.pem
 .vscode/
+*.log
+

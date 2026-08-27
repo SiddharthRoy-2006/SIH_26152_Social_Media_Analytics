@@ -11,7 +11,7 @@ Unit tests for Stage 3B real-data ingestion foundation:
 """
 
 import pytest
-from datetime import datetime
+from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
 from backend.connectors.base import (
@@ -39,7 +39,7 @@ def test_social_record_creation():
         platform="YouTube",
         content_id="test12345",
         content_type="video",
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         text="Exploring AI in education and youth innovation",
         author_name="EduTech Channel",
         engagement={"views": 15000, "likes": 850, "comments": 120},
@@ -136,32 +136,33 @@ def test_compute_real_metrics():
             platform="YouTube",
             content_id="1",
             content_type="video",
-            timestamp=datetime.utcnow(),
-            text="Great tutorial on AI",
-            engagement={"views": 1000, "likes": 100, "comments": 20, "shares": 5},
+            timestamp=datetime.now(timezone.utc),
+            text="First video on this topic with great insights",
+            author_name="Creator A",
+            engagement={"views": 10000, "likes": 500, "comments": 50, "shares": 25},
         ),
         SocialRecord(
             platform="YouTube",
-            content_id="2",
+            content_id="vid2",
             content_type="video",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             text="Second video",
             engagement={"views": 2000, "likes": 200, "comments": 30, "shares": 10},
         ),
     ]
     metrics = _compute_real_metrics(records)
-    assert metrics["reach"] == 3000
-    assert metrics["likes"] == 300
-    assert metrics["comments"] == 50
+    assert metrics["reach"] == 12000
+    assert metrics["likes"] == 700
+    assert metrics["comments"] == 80
     assert metrics["content_volume"] == 2
     assert metrics["engagement_rate"] > 0
 
 
 def test_compute_real_sentiment():
     records = [
-        SocialRecord(platform="YT", content_id="1", content_type="comment", timestamp=datetime.utcnow(), text="This is great and amazing, love it!"),
-        SocialRecord(platform="YT", content_id="2", content_type="comment", timestamp=datetime.utcnow(), text="Very helpful and wonderful resource"),
-        SocialRecord(platform="YT", content_id="3", content_type="comment", timestamp=datetime.utcnow(), text="Terrible and bad quality"),
+        SocialRecord(platform="YT", content_id="1", content_type="comment", timestamp=datetime.now(timezone.utc), text="This is great and amazing, love it!"),
+        SocialRecord(platform="YT", content_id="2", content_type="comment", timestamp=datetime.now(timezone.utc), text="Very helpful and wonderful resource"),
+        SocialRecord(platform="YT", content_id="3", content_type="comment", timestamp=datetime.now(timezone.utc), text="Terrible and bad quality"),
     ]
     sentiment = _compute_real_sentiment(records)
     assert sentiment["positive"] > sentiment["negative"]
@@ -424,7 +425,7 @@ def test_compute_real_metrics_multi_platform():
             platform="YouTube",
             content_id="yt1",
             content_type="video",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             text="YouTube Video",
             engagement={"views": 50000, "likes": 2500, "comments": 300, "shares": 100},
         ),
@@ -432,7 +433,7 @@ def test_compute_real_metrics_multi_platform():
             platform="Telegram",
             content_id="tg1",
             content_type="message",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             text="Telegram Post",
             engagement={"views": 15000, "forwards": 750, "replies": 150},
         ),
@@ -440,7 +441,7 @@ def test_compute_real_metrics_multi_platform():
             platform="Reddit",
             content_id="t3_rd1",
             content_type="post",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             text="Reddit Discussion",
             engagement={"score": 850, "upvotes": 850, "comments": 220, "shares": 40},
         ),

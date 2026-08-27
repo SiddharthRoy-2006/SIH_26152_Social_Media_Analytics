@@ -219,3 +219,29 @@ def test_general_accepts_telegram_and_reddit():
     assert r_rd.json()["platform"] == "Reddit"
 
 
+# ---------------------------------------------------------------------------
+# Explicit Demo Fallback Parameter Tests
+# ---------------------------------------------------------------------------
+
+def test_analysis_explicit_demo_parameter():
+    """Verify ?demo=true returns demo data even when live mode is configured."""
+    response = client.get("/analysis", params={"topic": "AI in Education", "platform": "YouTube", "demo": True})
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["data_available"] is True
+    assert payload["source"] == "demo"
+    assert payload["metrics"]["reach"] > 0
+    assert len(payload["top_trends"]) > 0
+
+
+def test_general_explicit_demo_parameter():
+    """Verify ?demo=true returns demo general data."""
+    response = client.get("/general", params={"platform": "All Platforms", "demo": True})
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["data_available"] is True
+    assert payload["source"] == "demo"
+    assert payload["mode"] == "general"
+    assert len(payload["top_trends"]) == 10
+
+

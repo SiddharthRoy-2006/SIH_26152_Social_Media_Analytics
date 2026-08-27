@@ -69,8 +69,8 @@ def main():
     print("  SocialIQ Analytics — Full-Stack Platform Starter (SIH 26152)")
     print("=" * 64)
 
-    # Ensure demo data mode by default if not set
-    os.environ.setdefault("SOCIALIQ_DATA_MODE", "demo")
+    # Ensure live data mode by default if not set (with explicit demo fallback available)
+    os.environ.setdefault("SOCIALIQ_DATA_MODE", "live")
 
     py_exe = get_python_executable()
     print(f"[*] Python interpreter : {py_exe}")
