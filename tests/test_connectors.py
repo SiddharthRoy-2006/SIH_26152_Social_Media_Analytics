@@ -221,3 +221,236 @@ def test_health_endpoint_returns_platforms():
     assert "Twitter / X" in data["platforms"]
     assert "Instagram" in data["platforms"]
     assert "Facebook" in data["platforms"]
+
+
+# ---------------------------------------------------------------------------
+# 7. TelegramConnector Tests (Stage 3C)
+# ---------------------------------------------------------------------------
+
+def test_telegram_connector_unconfigured():
+    from backend.connectors.telegram_connector import TelegramConnector
+
+    conn = TelegramConnector(api_id="", api_hash="")
+    health = conn.check_health()
+    assert health.status == PlatformStatus.NOT_CONFIGURED
+    assert "not configured" in health.reason.lower()
+
+
+def test_telegram_connector_incomplete_credentials():
+    from backend.connectors.telegram_connector import TelegramConnector
+
+    conn = TelegramConnector(api_id="123456", api_hash="")
+    health = conn.check_health()
+    assert health.status == PlatformStatus.NOT_CONFIGURED
+    assert "incomplete" in health.reason.lower()
+
+
+def test_telegram_connector_valid_mtproto_format():
+    from backend.connectors.telegram_connector import TelegramConnector
+
+    conn = TelegramConnector(api_id="12345678", api_hash="abcdef0123456789abcdef0123456789")
+    health = conn.check_health()
+    assert health.status == PlatformStatus.CONNECTED
+    assert "MTProto" in health.reason
+
+
+def test_telegram_search_unconfigured_returns_empty():
+    import asyncio
+    from backend.connectors.telegram_connector import TelegramConnector
+
+    conn = TelegramConnector(api_id="", api_hash="")
+    records = asyncio.run(conn.search("technology news"))
+    assert records == []
+
+
+def test_telegram_comments_unconfigured_returns_empty():
+    import asyncio
+    from backend.connectors.telegram_connector import TelegramConnector
+
+    conn = TelegramConnector(api_id="", api_hash="")
+    records = asyncio.run(conn.fetch_comments("channel_123"))
+    assert records == []
+
+
+def test_telegram_html_parsing_to_social_records():
+    from backend.connectors.telegram_connector import TelegramConnector
+
+    sample_html = '''
+    <div class="tgme_widget_message_wrap">
+      <div data-post="tech_news/101">
+        <div class="tgme_widget_message_owner_name"><span>Tech Daily</span></div>
+        <div class="tgme_widget_message_text">Exciting breakthrough in #quantum computing! Full report here.</div>
+        <time datetime="2026-08-27T08:30:00Z"></time>
+        <span class="tgme_widget_message_views">12.5K</span>
+      </div>
+    </div>
+    '''
+    conn = TelegramConnector(api_id="12345678", api_hash="abcdef0123456789abcdef0123456789")
+    records = conn._parse_public_channel_html(sample_html, channel_name="tech_news", limit=10)
+    assert len(records) == 1
+    rec = records[0]
+    assert rec.platform == "Telegram"
+    assert rec.content_id == "tech_news/101"
+    assert "quantum" in rec.text.lower()
+    assert rec.author_name == "Tech Daily"
+    assert rec.engagement["views"] == 12500
+    assert rec.engagement["forwards"] > 0
+    assert "#quantum" in rec.topic_keywords
+
+
+# ---------------------------------------------------------------------------
+# 8. RedditConnector Tests (Stage 3C)
+# ---------------------------------------------------------------------------
+
+def test_reddit_connector_unconfigured():
+    from backend.connectors.reddit_connector import RedditConnector
+
+    conn = RedditConnector(client_id="", client_secret="")
+    health = conn.check_health()
+    assert health.status == PlatformStatus.NOT_CONFIGURED
+    assert "not configured" in health.reason.lower()
+
+
+def test_reddit_connector_incomplete_credentials():
+    from backend.connectors.reddit_connector import RedditConnector
+
+    conn = RedditConnector(client_id="my_client_id", client_secret="")
+    health = conn.check_health()
+    assert health.status == PlatformStatus.NOT_CONFIGURED
+    assert "incomplete" in health.reason.lower()
+
+
+def test_reddit_search_unconfigured_returns_empty():
+    import asyncio
+    from backend.connectors.reddit_connector import RedditConnector
+
+    conn = RedditConnector(client_id="", client_secret="")
+    records = asyncio.run(conn.search("machine learning"))
+    assert records == []
+
+
+def test_reddit_comments_unconfigured_returns_empty():
+    import asyncio
+    from backend.connectors.reddit_connector import RedditConnector
+
+    conn = RedditConnector(client_id="", client_secret="")
+    records = asyncio.run(conn.fetch_comments("t3_xyz123"))
+    assert records == []
+
+
+def test_reddit_listing_parsing_to_social_records():
+    from backend.connectors.reddit_connector import RedditConnector
+
+    sample_listing = {
+        "kind": "Listing",
+        "data": {
+            "children": [
+                {
+                    "kind": "t3",
+                    "data": {
+                        "id": "abc789",
+                        "title": "New AI Education Framework Released",
+                        "selftext": "Discussion on the latest policy for digital schools.",
+                        "author": "edu_researcher",
+                        "score": 450,
+                        "ups": 450,
+                        "num_comments": 82,
+                        "num_crossposts": 15,
+                        "subreddit": "education",
+                        "link_flair_text": "Discussion",
+                        "permalink": "/r/education/comments/abc789/new_ai_education_framework/",
+                        "created_utc": 1756281600,
+                    }
+                }
+            ]
+        }
+    }
+
+    conn = RedditConnector(client_id="id", client_secret="secret")
+    records = conn._parse_reddit_listing(sample_listing)
+    assert len(records) == 1
+    rec = records[0]
+    assert rec.platform == "Reddit"
+    assert rec.content_id == "t3_abc789"
+    assert "Education Framework" in rec.text
+    assert rec.author_name == "edu_researcher"
+    assert rec.engagement["score"] == 450
+    assert rec.engagement["comments"] == 82
+    assert "r/education" in rec.topic_keywords
+    assert rec.source_url.startswith("https://reddit.com")
+
+
+def test_reddit_comments_parsing_to_social_records():
+    from backend.connectors.reddit_connector import RedditConnector
+
+    sample_comments = {
+        "kind": "Listing",
+        "data": {
+            "children": [
+                {
+                    "kind": "t1",
+                    "data": {
+                        "id": "comm101",
+                        "body": "This framework could really help rural institutions.",
+                        "author": "teacher_alex",
+                        "score": 45,
+                        "ups": 45,
+                        "permalink": "/r/education/comments/abc789/_/comm101/",
+                        "created_utc": 1756283000,
+                    }
+                }
+            ]
+        }
+    }
+
+    conn = RedditConnector(client_id="id", client_secret="secret")
+    records = conn._parse_reddit_comments(sample_comments, post_id="abc789")
+    assert len(records) == 1
+    rec = records[0]
+    assert rec.platform == "Reddit"
+    assert rec.content_id == "t1_comm101"
+    assert "rural institutions" in rec.text
+    assert rec.author_name == "teacher_alex"
+    assert rec.engagement["upvotes"] == 45
+
+
+# ---------------------------------------------------------------------------
+# 9. Multi-Platform Metric Aggregation
+# ---------------------------------------------------------------------------
+
+def test_compute_real_metrics_multi_platform():
+    records = [
+        SocialRecord(
+            platform="YouTube",
+            content_id="yt1",
+            content_type="video",
+            timestamp=datetime.utcnow(),
+            text="YouTube Video",
+            engagement={"views": 50000, "likes": 2500, "comments": 300, "shares": 100},
+        ),
+        SocialRecord(
+            platform="Telegram",
+            content_id="tg1",
+            content_type="message",
+            timestamp=datetime.utcnow(),
+            text="Telegram Post",
+            engagement={"views": 15000, "forwards": 750, "replies": 150},
+        ),
+        SocialRecord(
+            platform="Reddit",
+            content_id="t3_rd1",
+            content_type="post",
+            timestamp=datetime.utcnow(),
+            text="Reddit Discussion",
+            engagement={"score": 850, "upvotes": 850, "comments": 220, "shares": 40},
+        ),
+    ]
+
+    metrics = _compute_real_metrics(records)
+    assert metrics["reach"] == 65000  # 50000 + 15000
+    assert metrics["likes"] == 3350   # 2500 + 850
+    assert metrics["comments"] == 670 # 300 + 150 + 220
+    assert metrics["shares"] == 890   # 100 + 750 + 40
+    assert metrics["content_volume"] == 3
+    assert metrics["engagement_rate"] > 0
+

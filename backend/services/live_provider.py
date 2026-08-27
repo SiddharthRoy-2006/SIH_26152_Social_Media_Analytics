@@ -117,27 +117,42 @@ def _compute_real_sentiment(records: list[SocialRecord]) -> dict[str, int]:
 
 
 def _compute_real_metrics(records: list[SocialRecord]) -> dict[str, Any]:
-    """Aggregate engagement metrics from real records."""
+    """Aggregate engagement metrics across all supported social platforms."""
     total_views = sum(r.engagement.get("views", 0) for r in records)
-    total_likes = sum(r.engagement.get("likes", 0) for r in records)
-    total_comments = sum(r.engagement.get("comments", 0) for r in records)
-    total_shares = sum(r.engagement.get("shares", 0) for r in records)
+    total_likes = sum(
+        r.engagement.get("likes", 0)
+        or r.engagement.get("upvotes", 0)
+        or max(0, r.engagement.get("score", 0))
+        for r in records
+    )
+    total_comments = sum(
+        r.engagement.get("comments", 0)
+        or r.engagement.get("replies", 0)
+        for r in records
+    )
+    total_shares = sum(
+        r.engagement.get("shares", 0)
+        or r.engagement.get("forwards", 0)
+        for r in records
+    )
 
-    reach = total_views if total_views > 0 else total_likes * 10
+    reach = total_views if total_views > 0 else max(total_likes * 10, len(records) * 250)
+    total_engagements = total_likes + total_comments + total_shares
     engagement_rate = round(
-        ((total_likes + total_comments + total_shares) / max(reach, 1)) * 100, 1
+        (total_engagements / max(reach, 1)) * 100, 1
     )
 
     return {
-        "followers": 0,  # Not available from search-only data
+        "followers": 0,  # Not directly available from search-only data
         "reach": reach,
         "likes": total_likes,
         "comments": total_comments,
         "shares": total_shares,
         "content_volume": len(records),
         "engagement_rate": engagement_rate,
-        "growth": 0.0,  # Would need historical comparison
+        "growth": 0.0,  # Requires temporal baseline
     }
+
 
 
 # ---------------------------------------------------------------------------

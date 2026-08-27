@@ -12,7 +12,10 @@ from backend.connectors.base import (
     PlatformStatus,
     SocialRecord,
 )
-from backend.connectors.registry import ConnectorRegistry
+from backend.connectors.registry import ConnectorRegistry, get_registry
+from backend.connectors.youtube_connector import YouTubeConnector
+from backend.connectors.telegram_connector import TelegramConnector
+from backend.connectors.reddit_connector import RedditConnector
 
 __all__ = [
     "PlatformCapability",
@@ -20,4 +23,9 @@ __all__ = [
     "PlatformStatus",
     "SocialRecord",
     "ConnectorRegistry",
+    "get_registry",
+    "YouTubeConnector",
+    "TelegramConnector",
+    "RedditConnector",
 ]
+

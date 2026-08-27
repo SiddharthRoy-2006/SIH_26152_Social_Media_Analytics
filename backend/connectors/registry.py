@@ -164,11 +164,25 @@ def get_registry() -> ConnectorRegistry:
     global _global_registry
     if _global_registry is None:
         from backend.connectors.youtube_connector import YouTubeConnector
+        from backend.connectors.telegram_connector import TelegramConnector
+        from backend.connectors.reddit_connector import RedditConnector
         from backend.core.config import settings
 
         reg = ConnectorRegistry()
         youtube_conn = YouTubeConnector(api_key=settings.youtube_api_key)
+        telegram_conn = TelegramConnector(
+            api_id=settings.telegram_api_id,
+            api_hash=settings.telegram_api_hash,
+        )
+        reddit_conn = RedditConnector(
+            client_id=settings.reddit_client_id,
+            client_secret=settings.reddit_client_secret,
+        )
+
         reg.register(youtube_conn)
+        reg.register(telegram_conn)
+        reg.register(reddit_conn)
         _global_registry = reg
     return _global_registry
+
 

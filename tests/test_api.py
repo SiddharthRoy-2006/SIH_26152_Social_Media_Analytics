@@ -164,3 +164,58 @@ def test_demo_influencers_vary_by_topic():
     t1 = r1.json()["top_trends"][0]["name"]
     t2 = r2.json()["top_trends"][0]["name"]
     assert t1 != t2 or inf1 != inf2, "Different topics should produce different top data"
+
+
+# ---------------------------------------------------------------------------
+# CORS and Startup Reliability Tests
+# ---------------------------------------------------------------------------
+
+def test_cors_headers_on_get():
+    """Verify CORS headers are properly returned for frontend origins."""
+    response = client.get(
+        "/health",
+        headers={"Origin": "http://127.0.0.1:5500"},
+    )
+    assert response.status_code == 200
+    assert "access-control-allow-origin" in response.headers
+    assert response.headers["access-control-allow-origin"] in ["http://127.0.0.1:5500", "*"]
+
+
+def test_cors_preflight_options():
+    """Verify CORS OPTIONS preflight succeeds cleanly for frontend requests."""
+    response = client.options(
+        "/general",
+        headers={
+            "Origin": "http://localhost:5500",
+            "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Headers": "authorization,content-type",
+        },
+    )
+    assert response.status_code == 200
+    assert "access-control-allow-origin" in response.headers
+
+
+# ---------------------------------------------------------------------------
+# Telegram & Reddit Route Tests
+# ---------------------------------------------------------------------------
+
+def test_analysis_accepts_telegram_and_reddit():
+    r_tg = client.get("/analysis", params={"topic": "Tech Policy", "platform": "Telegram"})
+    assert r_tg.status_code == 200
+    assert r_tg.json()["platform"] == "Telegram"
+
+    r_rd = client.get("/analysis", params={"topic": "Tech Policy", "platform": "Reddit"})
+    assert r_rd.status_code == 200
+    assert r_rd.json()["platform"] == "Reddit"
+
+
+def test_general_accepts_telegram_and_reddit():
+    r_tg = client.get("/general", params={"platform": "Telegram"})
+    assert r_tg.status_code == 200
+    assert r_tg.json()["platform"] == "Telegram"
+
+    r_rd = client.get("/general", params={"platform": "Reddit"})
+    assert r_rd.status_code == 200
+    assert r_rd.json()["platform"] == "Reddit"
+
+

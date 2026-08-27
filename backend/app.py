@@ -10,9 +10,9 @@ app = FastAPI(title="SocialIQ Analytics API", version="0.2.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=list(settings.cors_origins),
+    allow_origins=list(settings.cors_origins) if "*" not in settings.cors_origins else ["*"],
     allow_credentials=False,
-    allow_methods=["GET"],
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
