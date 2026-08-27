@@ -1,44 +1,69 @@
-# SocialIQ Analytics
+# SocialIQ Analytics — AI-Driven Social Media Intelligence Platform
+**Smart India Hackathon 2026 · Problem Statement 26152 · Team NEXORA**
 
-The frontend is a finished static UI. The FastAPI backend supplies its campaign-aware
-analysis data through `GET /analysis`.
+SocialIQ Analytics is a full-stack, AI-powered social media intelligence platform providing real-time multi-platform monitoring, sentiment & emotion analysis, predictive trend forecasting, network propagation topology, audience demographic profiling, and cross-platform narrative tracking.
 
-## Run on Windows
+---
 
-Install a supported Python version (3.11 or 3.12 recommended), then create a fresh
-virtual environment from the project root:
+## Quick Start (One-Click Launch)
 
-```powershell
-py -3.12 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-$env:SOCIALIQ_DATA_MODE = "demo"
-.\.venv\Scripts\python.exe -m uvicorn backend.app:app --port 8001
-```
-
-Open `http://127.0.0.1:8001/docs` to explore the API. Serve the frontend with VS Code
-Live Server (port 5500), then open its generated localhost address. This is allowed by
-the default CORS configuration.
-
-## Test
-
-With the environment active:
+SocialIQ includes an auto-detecting full-stack launcher that starts the FastAPI backend (port 8001) and frontend HTTP server (port 5500), probes backend readiness, and opens the dashboard in your default browser:
 
 ```powershell
-pytest
-Invoke-RestMethod "http://127.0.0.1:8001/analysis?topic=Education%20Policy&platform=Instagram&period=Last%2030%20Days&chart_period=Monthly"
+# From the project root:
+python run_app.py
 ```
 
-## Data modes
+- **Frontend Dashboard**: `http://127.0.0.1:5500` (or `http://localhost:5500`)
+- **Backend API & Health**: `http://127.0.0.1:8001/health`
+- **Interactive OpenAPI Docs**: `http://127.0.0.1:8001/docs`
 
-The default `SOCIALIQ_DATA_MODE=empty` returns zero values and `No information`; it is
-the correct mode before authorised platform APIs are connected. To test UI loading with
-clearly labelled development samples, set `SOCIALIQ_DATA_MODE=demo` before starting
-the API. Copy `.env.example` as a reference—environment variables are intentionally
-read from the operating system rather than hard-coded in source.
+---
 
-Future authorised Instagram, YouTube, Facebook, and X integrations belong behind the
-`PlatformDataProvider` interface in `backend/services/analysis_service.py`. The
-`ml/`, `models/`, and `data/` folders remain available for trained artefacts and
-processed data; no large model or database is required for this foundation.
+## 6-Platform Ingestion Architecture
+
+SocialIQ ingests social media data from 6 major platforms into a normalized `SocialRecord` schema:
+
+| Platform | Connector | Ingestion Mechanism | Capability Status |
+| :--- | :--- | :--- | :--- |
+| **YouTube** | `YouTubeConnector` | YouTube Data API v3 (Search, Videos, Comments) | Live / Configurable |
+| **Telegram** | `TelegramConnector` | MTProto & Public Channel Web Directory | Live / Configurable |
+| **Reddit** | `RedditConnector` | OAuth2 Client Credentials & Listing API | Live / Configurable |
+| **Twitter / X** | `TwitterConnector` | X API v2 Bearer Token (Recent Search) | Live / Inline Notice |
+| **Instagram** | `InstagramConnector` | Meta Graph API (Business Discovery) | Meta App Review Modal |
+| **Facebook** | `FacebookConnector` | Meta Graph API (Page Public Access) | Meta App Review Modal |
+
+---
+
+## Data Modes
+
+The platform supports three distinct runtime data modes controlled by the `SOCIALIQ_DATA_MODE` environment variable:
+
+1. **`demo` (Default for presentation)**: Rich simulated intelligence across all platforms and topics, enabling immediate interactive evaluation without requiring paid external API credentials.
+2. **`live`**: Ingests real data through configured API connectors with automated fallback and honest status badges (`Live Real Data`, `Limited Access`, `Not Configured`, `Unavailable`).
+3. **`empty`**: Honest zero-data baseline for contract and compliance testing.
+
+---
+
+## Testing & Quality Assurance
+
+Run the comprehensive 51-test verification suite:
+
+```powershell
+# Run in default mode:
+.\.venv\Scripts\python.exe -m pytest
+
+# Run with demo mode enabled:
+$env:SOCIALIQ_DATA_MODE="demo"; .\.venv\Scripts\python.exe -m pytest
+```
+
+---
+
+## Core AI & Analytics Modules
+
+- `ml/sentiment_engine.py`: Sentiment scoring, fine-grained emotion classification, chronological sentiment timeline.
+- `ml/trend_engine.py`: Predictive trend scoring, momentum index, velocity calculations.
+- `ml/network_engine.py`: Community detection, graph topology (nodes, edges, communities), propagation paths.
+- `ml/demographic_engine.py`: Age distribution, geographical heatmaps, language breakdown, interest segmentation.
+- `ml/insight_engine.py`: Automated strategic recommendations, risk alerts, growth signals.
+
