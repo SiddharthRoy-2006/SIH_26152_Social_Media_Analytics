@@ -383,6 +383,8 @@ window.resetTopologyZoom = resetTopologyZoom;
 window.showCredentialHelpModal = showCredentialHelpModal;
 window.handleSaveAndTest = handleSaveAndTest;
 window.handleClearCredential = handleClearCredential;
+window.selectActivityTimeline = selectActivityTimeline;
+window.renderDynamicActivityComponent = renderDynamicActivityComponent;
 
 /* ================================================================
    INITIALIZATION

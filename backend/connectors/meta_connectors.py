@@ -63,6 +63,27 @@ class InstagramConnector(PlatformConnector):
     def check_health(self) -> PlatformCapability:
         now = datetime.now(timezone.utc)
 
+        ig_prof_layer = {
+            "name": "Instagram Graph API (Professional/Creator)",
+            "access_type": "Meta User/Page Access Token & Instagram Business Account ID",
+            "usage": "Hashtag search, business discovery, media performance metrics, and comment threads.",
+            "provides": ["Hashtag recent media", "Business discovery metadata", "Comments on owned/tagged media"],
+            "auth_required": True,
+            "status": "CONNECTED" if (self._access_token and self._account_id) else "NOT_CONFIGURED",
+        }
+        ig_basic_layer = {
+            "name": "Instagram Basic Display API",
+            "access_type": "Instagram User Token",
+            "usage": "Personal profile info and authenticated user media gallery.",
+            "provides": ["Basic user profile", "Personal media feed"],
+            "auth_required": True,
+            "status": "NOT_CONNECTED",
+        }
+
+        access_layers = [ig_prof_layer, ig_basic_layer]
+        supported_metrics = ["media_posts", "likes", "comments", "impressions", "reach", "sentiment"]
+        unsupported_metrics = ["personal_account_search", "unauthorized_user_profiles", "story_viewers"]
+
         if not self._access_token and not self._account_id:
             return PlatformCapability(
                 platform="Instagram",
@@ -72,6 +93,9 @@ class InstagramConnector(PlatformConnector):
                 approx_test_time="1-3 seconds",
                 available_data=[],
                 last_checked=now,
+                access_layers=access_layers,
+                supported_metrics=supported_metrics,
+                unsupported_metrics=unsupported_metrics,
             )
 
         if not self._access_token or not self._account_id:
@@ -83,6 +107,9 @@ class InstagramConnector(PlatformConnector):
                 approx_test_time="1-3 seconds",
                 available_data=[],
                 last_checked=now,
+                access_layers=access_layers,
+                supported_metrics=supported_metrics,
+                unsupported_metrics=unsupported_metrics,
             )
 
         try:
@@ -92,6 +119,7 @@ class InstagramConnector(PlatformConnector):
             with httpx.Client(timeout=self._http_timeout) as client:
                 resp = client.get(url, params=params)
                 if resp.status_code == 200:
+                    ig_prof_layer["status"] = "CONNECTED"
                     return PlatformCapability(
                         platform="Instagram",
                         status=PlatformStatus.CONNECTED,
@@ -101,8 +129,12 @@ class InstagramConnector(PlatformConnector):
                         approx_test_time="1-3 seconds",
                         last_checked=now,
                         last_successful=now,
+                        access_layers=access_layers,
+                        supported_metrics=supported_metrics,
+                        unsupported_metrics=unsupported_metrics,
                     )
                 elif resp.status_code == 429:
+                    ig_prof_layer["status"] = "RATE_LIMITED"
                     return PlatformCapability(
                         platform="Instagram",
                         status=PlatformStatus.RATE_LIMITED,
@@ -112,8 +144,12 @@ class InstagramConnector(PlatformConnector):
                         approx_test_time="1-3 seconds",
                         last_checked=now,
                         error_detail="HTTP 429 Rate Limit",
+                        access_layers=access_layers,
+                        supported_metrics=supported_metrics,
+                        unsupported_metrics=unsupported_metrics,
                     )
                 else:
+                    ig_prof_layer["status"] = "INVALID_CREDENTIAL"
                     return PlatformCapability(
                         platform="Instagram",
                         status=PlatformStatus.ERROR,
@@ -123,6 +159,9 @@ class InstagramConnector(PlatformConnector):
                         approx_test_time="1-3 seconds",
                         last_checked=now,
                         error_detail=f"HTTP {resp.status_code}",
+                        access_layers=access_layers,
+                        supported_metrics=supported_metrics,
+                        unsupported_metrics=unsupported_metrics,
                     )
         except Exception as exc:
             return PlatformCapability(
@@ -134,6 +173,9 @@ class InstagramConnector(PlatformConnector):
                 approx_test_time="1-3 seconds",
                 last_checked=now,
                 error_detail=str(exc)[:200],
+                access_layers=access_layers,
+                supported_metrics=supported_metrics,
+                unsupported_metrics=unsupported_metrics,
             )
 
     async def search(
@@ -193,6 +235,27 @@ class FacebookConnector(PlatformConnector):
     def check_health(self) -> PlatformCapability:
         now = datetime.now(timezone.utc)
 
+        fb_page_layer = {
+            "name": "Facebook Graph API (Page Content Access)",
+            "access_type": "Meta Page Access Token & Page ID",
+            "usage": "Page public post feeds, reaction statistics, comment streams.",
+            "provides": ["Page posts", "Reactions (Likes, Loves, etc.)", "Comments & discussions"],
+            "auth_required": True,
+            "status": "CONNECTED" if (self._access_token and self._page_id) else "NOT_CONFIGURED",
+        }
+        fb_insights_layer = {
+            "name": "Facebook Page Insights API",
+            "access_type": "Page Administrator OAuth 2.0",
+            "usage": "Page aggregated reach, page views, and follower demographics.",
+            "provides": ["Page follower count", "Page demographic insights", "Impression reach"],
+            "auth_required": True,
+            "status": "NOT_CONNECTED",
+        }
+
+        access_layers = [fb_page_layer, fb_insights_layer]
+        supported_metrics = ["posts", "reactions", "comments", "shares", "sentiment"]
+        unsupported_metrics = ["personal_profile_scraping", "unauthorized_group_posts", "private_messages"]
+
         if not self._access_token and not self._page_id:
             return PlatformCapability(
                 platform="Facebook",
@@ -202,6 +265,9 @@ class FacebookConnector(PlatformConnector):
                 approx_test_time="1-3 seconds",
                 available_data=[],
                 last_checked=now,
+                access_layers=access_layers,
+                supported_metrics=supported_metrics,
+                unsupported_metrics=unsupported_metrics,
             )
 
         if not self._access_token or not self._page_id:
@@ -213,6 +279,9 @@ class FacebookConnector(PlatformConnector):
                 approx_test_time="1-3 seconds",
                 available_data=[],
                 last_checked=now,
+                access_layers=access_layers,
+                supported_metrics=supported_metrics,
+                unsupported_metrics=unsupported_metrics,
             )
 
         try:
@@ -222,6 +291,7 @@ class FacebookConnector(PlatformConnector):
             with httpx.Client(timeout=self._http_timeout) as client:
                 resp = client.get(url, params=params)
                 if resp.status_code == 200:
+                    fb_page_layer["status"] = "CONNECTED"
                     return PlatformCapability(
                         platform="Facebook",
                         status=PlatformStatus.CONNECTED,
@@ -231,8 +301,12 @@ class FacebookConnector(PlatformConnector):
                         approx_test_time="1-3 seconds",
                         last_checked=now,
                         last_successful=now,
+                        access_layers=access_layers,
+                        supported_metrics=supported_metrics,
+                        unsupported_metrics=unsupported_metrics,
                     )
                 elif resp.status_code == 429:
+                    fb_page_layer["status"] = "RATE_LIMITED"
                     return PlatformCapability(
                         platform="Facebook",
                         status=PlatformStatus.RATE_LIMITED,
@@ -242,8 +316,12 @@ class FacebookConnector(PlatformConnector):
                         approx_test_time="1-3 seconds",
                         last_checked=now,
                         error_detail="HTTP 429 Rate Limit",
+                        access_layers=access_layers,
+                        supported_metrics=supported_metrics,
+                        unsupported_metrics=unsupported_metrics,
                     )
                 else:
+                    fb_page_layer["status"] = "INVALID_CREDENTIAL"
                     return PlatformCapability(
                         platform="Facebook",
                         status=PlatformStatus.ERROR,
@@ -253,6 +331,9 @@ class FacebookConnector(PlatformConnector):
                         approx_test_time="1-3 seconds",
                         last_checked=now,
                         error_detail=f"HTTP {resp.status_code}",
+                        access_layers=access_layers,
+                        supported_metrics=supported_metrics,
+                        unsupported_metrics=unsupported_metrics,
                     )
         except Exception as exc:
             return PlatformCapability(
@@ -264,6 +345,9 @@ class FacebookConnector(PlatformConnector):
                 approx_test_time="1-3 seconds",
                 last_checked=now,
                 error_detail=str(exc)[:200],
+                access_layers=access_layers,
+                supported_metrics=supported_metrics,
+                unsupported_metrics=unsupported_metrics,
             )
 
     async def search(

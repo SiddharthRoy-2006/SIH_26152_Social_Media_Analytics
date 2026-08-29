@@ -143,6 +143,10 @@ class CredentialStatusResponse(BaseModel):
     approx_test_time: str = "A few seconds"
     last_checked: str | None = None
     last_successful: str | None = None
+    access_layers: list[dict[str, Any]] = Field(default_factory=list)
+    supported_metrics: list[str] = Field(default_factory=list)
+    unsupported_metrics: list[str] = Field(default_factory=list)
+    last_data_retrieval: str | None = None
 
 
 class AllCredentialsStatusResponse(BaseModel):

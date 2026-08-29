@@ -76,6 +76,27 @@ class TelegramConnector(PlatformConnector):
     def check_health(self) -> PlatformCapability:
         now = datetime.now(timezone.utc)
 
+        mtproto_layer = {
+            "name": "Telegram MTProto Client",
+            "access_type": "API ID & API Hash",
+            "usage": "Public channel message search, public discussion group monitoring, reply thread ingestion.",
+            "provides": ["Public channel messages", "Forward counts & views", "Discussion reply threads"],
+            "auth_required": False,
+            "status": "CONNECTED" if (len(self._api_id) >= 4 and len(self._api_hash) >= 16) else "NOT_CONFIGURED",
+        }
+        bot_api_layer = {
+            "name": "Telegram Bot API",
+            "access_type": "Bot Token",
+            "usage": "Bot-managed group message updates and webhook-driven event streams.",
+            "provides": ["Bot channel updates", "Message delivery status"],
+            "auth_required": False,
+            "status": "CONNECTED" if self._bot_token else "NOT_CONFIGURED",
+        }
+
+        access_layers = [mtproto_layer, bot_api_layer]
+        supported_metrics = ["messages", "views", "forwards", "replies", "discussion_text", "sentiment"]
+        unsupported_metrics = ["likes_dislikes", "user_demographics", "private_chat_content"]
+
         # Requires credentials to operate live API gateway
         if not self._api_id and not self._api_hash and not self._bot_token:
             return PlatformCapability(
@@ -86,6 +107,9 @@ class TelegramConnector(PlatformConnector):
                 approx_test_time="1-3 seconds",
                 available_data=["public_channel_search", "messages"],
                 last_checked=now,
+                access_layers=access_layers,
+                supported_metrics=supported_metrics,
+                unsupported_metrics=unsupported_metrics,
             )
 
         if (self._api_id and not self._api_hash) or (self._api_hash and not self._api_id):
@@ -97,6 +121,9 @@ class TelegramConnector(PlatformConnector):
                 approx_test_time="1-3 seconds",
                 available_data=["public_channel_search", "messages"],
                 last_checked=now,
+                access_layers=access_layers,
+                supported_metrics=supported_metrics,
+                unsupported_metrics=unsupported_metrics,
             )
 
         try:
@@ -106,6 +133,7 @@ class TelegramConnector(PlatformConnector):
                 with httpx.Client(timeout=self._http_timeout) as client:
                     resp = client.get(url)
                     if resp.status_code == 200 and resp.json().get("ok"):
+                        bot_api_layer["status"] = "CONNECTED"
                         return PlatformCapability(
                             platform="Telegram",
                             status=PlatformStatus.CONNECTED,
@@ -115,8 +143,12 @@ class TelegramConnector(PlatformConnector):
                             approx_test_time="1-3 seconds",
                             last_checked=now,
                             last_successful=now,
+                            access_layers=access_layers,
+                            supported_metrics=supported_metrics,
+                            unsupported_metrics=unsupported_metrics,
                         )
                     elif resp.status_code == 429:
+                        bot_api_layer["status"] = "RATE_LIMITED"
                         return PlatformCapability(
                             platform="Telegram",
                             status=PlatformStatus.RATE_LIMITED,
@@ -126,8 +158,12 @@ class TelegramConnector(PlatformConnector):
                             approx_test_time="1-3 seconds",
                             last_checked=now,
                             error_detail="HTTP 429 Flood Wait",
+                            access_layers=access_layers,
+                            supported_metrics=supported_metrics,
+                            unsupported_metrics=unsupported_metrics,
                         )
                     else:
+                        bot_api_layer["status"] = "INVALID_CREDENTIAL"
                         return PlatformCapability(
                             platform="Telegram",
                             status=PlatformStatus.ERROR,
@@ -137,10 +173,14 @@ class TelegramConnector(PlatformConnector):
                             approx_test_time="1-3 seconds",
                             last_checked=now,
                             error_detail=f"HTTP {resp.status_code}",
+                            access_layers=access_layers,
+                            supported_metrics=supported_metrics,
+                            unsupported_metrics=unsupported_metrics,
                         )
 
             # When MTProto credentials (api_id + api_hash) are present and structurally valid
             if len(self._api_id) >= 4 and len(self._api_hash) >= 16:
+                mtproto_layer["status"] = "CONNECTED"
                 return PlatformCapability(
                     platform="Telegram",
                     status=PlatformStatus.CONNECTED,
@@ -150,8 +190,12 @@ class TelegramConnector(PlatformConnector):
                     approx_test_time="1-3 seconds",
                     last_checked=now,
                     last_successful=now,
+                    access_layers=access_layers,
+                    supported_metrics=supported_metrics,
+                    unsupported_metrics=unsupported_metrics,
                 )
             else:
+                mtproto_layer["status"] = "INVALID_CREDENTIAL"
                 return PlatformCapability(
                     platform="Telegram",
                     status=PlatformStatus.ERROR,
@@ -161,6 +205,9 @@ class TelegramConnector(PlatformConnector):
                     approx_test_time="1-3 seconds",
                     last_checked=now,
                     error_detail="Invalid credential lengths",
+                    access_layers=access_layers,
+                    supported_metrics=supported_metrics,
+                    unsupported_metrics=unsupported_metrics,
                 )
 
         except Exception as exc:
@@ -174,6 +221,9 @@ class TelegramConnector(PlatformConnector):
                 approx_test_time="1-3 seconds",
                 last_checked=now,
                 error_detail=str(exc)[:200],
+                access_layers=access_layers,
+                supported_metrics=supported_metrics,
+                unsupported_metrics=unsupported_metrics,
             )
 
 

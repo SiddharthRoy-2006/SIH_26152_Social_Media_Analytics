@@ -73,7 +73,7 @@ class EmptyGeneralProvider:
             emotions={"happy":0,"sad":0,"angry":0,"fear":0,"surprise":0,"disgust":0,"other":0},
             trending={"topic":"No information","keyword":"No information","topics":[],"keywords":[]},
             network={"nodes":0,"connections":0,"communities":0},
-            activity=[0,0,0,0,0], growth_series=[],
+            activity=[0,0,0,0,0,0,0], growth_series=[],
             insights={"score_status":"No information","score_message":"No information","best_posting_time":"No information","growth_signal":"No information","recommendation":"No information","activity_window":"No information"},
             mode="general", refresh_tick=request.refresh_tick,
         )
@@ -99,14 +99,12 @@ class DemoGeneralProvider:
         engagement  = round(((likes + comments + shares) / max(reach, 1)) * 100, 1)
         growth      = round(8 + (seed % 180) / 10 + math.sin(tick * 0.5) * 2, 1)
 
-        # ----- legacy audience -----
-        age18_24 = 22 + (seed % 14)
-        age25_34 = 31 + ((seed // 3) % 11)
-        age35_44 = 20 + ((seed // 5) % 9)
-        age45    = max(0, 100 - age18_24 - age25_34 - age35_44)
+        age18_24 = 24
+        age25_34 = 33
+        age35_44 = 22
+        age45    = 21
 
-        # ----- sentiment -----
-        sentiment_dict = generate_sentiment(seed, tick, request.period, 0.1)
+        sentiment_dict = generate_sentiment(seed, tick)
         emotions_dict  = generate_emotions(seed, tick)
         # Full 11-emotion breakdown
         legacy_emotions = dict(emotions_dict)
@@ -115,13 +113,15 @@ class DemoGeneralProvider:
             diff = 100 - total_emo
             legacy_emotions["happy"] = max(0, legacy_emotions.get("happy", 0) + diff)
 
-        # ----- activity -----
-        activity_5 = [
+        # ----- activity (7 days: Mon..Sun) -----
+        activity_7 = [
             _drift_i(55 + (seed % 25), tick, 10),
             _drift_i(62 + ((seed // 2) % 20), tick + 1, 10),
             _drift_i(70 + ((seed // 3) % 20), tick + 2, 10),
             _drift_i(75 + ((seed // 5) % 15), tick + 3, 10),
             _drift_i(68 + ((seed // 7) % 20), tick + 4, 10),
+            _drift_i(72 + ((seed // 4) % 20), tick + 5, 10),
+            _drift_i(58 + ((seed // 6) % 20), tick + 6, 10),
         ]
         growth_series = [
             _drift_i(int(reach * r), tick, 2000)
@@ -203,7 +203,7 @@ class DemoGeneralProvider:
                 "topics": topic_variants, "keywords": keywords,
             },
             network=network_legacy,
-            activity=activity_5,
+            activity=activity_7,
             growth_series=growth_series,
             insights=insights_dict,
             ai_insights=ai_insights,

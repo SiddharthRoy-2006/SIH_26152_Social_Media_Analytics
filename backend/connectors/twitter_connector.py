@@ -68,6 +68,27 @@ class TwitterConnector(PlatformConnector):
     def check_health(self) -> PlatformCapability:
         now = datetime.now(timezone.utc)
 
+        app_layer = {
+            "name": "X API v2 App-Only Access",
+            "access_type": "OAuth 2.0 Bearer Token (App-Only)",
+            "usage": "Recent public tweet search (past 7 days), tweet engagement metrics, conversation threads.",
+            "provides": ["Recent tweet search (7-day window)", "Likes, retweets, replies, impressions", "Public conversation threads"],
+            "auth_required": False,
+            "status": "CONNECTED" if self._bearer_token else "NOT_CONFIGURED",
+        }
+        user_layer = {
+            "name": "X API v2 User-Context Access",
+            "access_type": "OAuth 2.0 User-Context Token",
+            "usage": "Authenticated account management, full historical archive search, direct message telemetry.",
+            "provides": ["Full archive tweet search", "Direct message events", "User timeline stream"],
+            "auth_required": True,
+            "status": "NOT_CONNECTED",
+        }
+
+        access_layers = [app_layer, user_layer]
+        supported_metrics = ["tweets", "impressions", "likes", "retweets", "replies", "quotes", "sentiment"]
+        unsupported_metrics = ["full_historical_archive", "user_demographics", "direct_messages"]
+
         if not self._bearer_token:
             return PlatformCapability(
                 platform="Twitter / X",
@@ -77,6 +98,9 @@ class TwitterConnector(PlatformConnector):
                 approx_test_time="1-3 seconds",
                 available_data=[],
                 last_checked=now,
+                access_layers=access_layers,
+                supported_metrics=supported_metrics,
+                unsupported_metrics=unsupported_metrics,
             )
 
         try:
@@ -89,6 +113,7 @@ class TwitterConnector(PlatformConnector):
             with httpx.Client(timeout=self._http_timeout) as client:
                 resp = client.get(url, headers=headers)
                 if resp.status_code == 200:
+                    app_layer["status"] = "CONNECTED"
                     return PlatformCapability(
                         platform="Twitter / X",
                         status=PlatformStatus.CONNECTED,
@@ -98,8 +123,12 @@ class TwitterConnector(PlatformConnector):
                         approx_test_time="1-3 seconds",
                         last_checked=now,
                         last_successful=now,
+                        access_layers=access_layers,
+                        supported_metrics=supported_metrics,
+                        unsupported_metrics=unsupported_metrics,
                     )
                 elif resp.status_code == 429:
+                    app_layer["status"] = "RATE_LIMITED"
                     return PlatformCapability(
                         platform="Twitter / X",
                         status=PlatformStatus.RATE_LIMITED,
@@ -109,14 +138,19 @@ class TwitterConnector(PlatformConnector):
                         approx_test_time="1-3 seconds",
                         last_checked=now,
                         error_detail="HTTP 429 Rate Limit",
+                        access_layers=access_layers,
+                        supported_metrics=supported_metrics,
+                        unsupported_metrics=unsupported_metrics,
                     )
                 elif resp.status_code in (401, 403):
                     # Check if error response mentions credits/billing
                     body = resp.text.lower()
                     if "credit" in body or "usage" in body or "billing" in body:
                         reason = "X API credits exhausted or pay-per-use billing required."
+                        app_layer["status"] = "BILLING_LIMITED"
                     else:
                         reason = "X API Bearer Token is invalid or does not have v2 access permissions."
+                        app_layer["status"] = "INVALID_CREDENTIAL"
                     return PlatformCapability(
                         platform="Twitter / X",
                         status=PlatformStatus.ERROR,
@@ -126,8 +160,12 @@ class TwitterConnector(PlatformConnector):
                         approx_test_time="1-3 seconds",
                         last_checked=now,
                         error_detail=f"HTTP {resp.status_code}",
+                        access_layers=access_layers,
+                        supported_metrics=supported_metrics,
+                        unsupported_metrics=unsupported_metrics,
                     )
                 else:
+                    app_layer["status"] = "INVALID_CREDENTIAL"
                     return PlatformCapability(
                         platform="Twitter / X",
                         status=PlatformStatus.ERROR,
@@ -137,6 +175,9 @@ class TwitterConnector(PlatformConnector):
                         approx_test_time="1-3 seconds",
                         last_checked=now,
                         error_detail=f"HTTP {resp.status_code}",
+                        access_layers=access_layers,
+                        supported_metrics=supported_metrics,
+                        unsupported_metrics=unsupported_metrics,
                     )
 
         except Exception as exc:
@@ -149,6 +190,9 @@ class TwitterConnector(PlatformConnector):
                 approx_test_time="1-3 seconds",
                 last_checked=now,
                 error_detail=str(exc)[:200],
+                access_layers=access_layers,
+                supported_metrics=supported_metrics,
+                unsupported_metrics=unsupported_metrics,
             )
 
 

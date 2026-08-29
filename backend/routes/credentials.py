@@ -61,6 +61,10 @@ def _capability_to_response(cap: PlatformCapability) -> CredentialStatusResponse
         approx_test_time=cap.approx_test_time,
         last_checked=cap.last_checked.isoformat() if cap.last_checked else None,
         last_successful=cap.last_successful.isoformat() if cap.last_successful else None,
+        access_layers=cap.access_layers or [],
+        supported_metrics=cap.supported_metrics or [],
+        unsupported_metrics=cap.unsupported_metrics or [],
+        last_data_retrieval=cap.last_data_retrieval.isoformat() if cap.last_data_retrieval else None,
     )
 
 

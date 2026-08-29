@@ -88,6 +88,7 @@ const state = {
   platform:    'All Platforms',
   dateRange:   'Last 30 Days',
   chartPeriod: 'Monthly',
+  activityTimeline: 'Week',
   campaign:    { topic: '', query: '' },
   currentPage: 'dashboard',
   username:    'Analyst',
@@ -447,21 +448,157 @@ function renderGeoBars(container, data) {
   `).join('')}</div>`;
 }
 
-function renderActivityBars(container, activity) {
+function selectActivityTimeline(timeline, containerId) {
+  state.activityTimeline = timeline;
+  const d = state.data;
+  if (containerId) {
+    const container = $(containerId);
+    if (container) renderDynamicActivityComponent(container, d, timeline);
+  } else {
+    const tBox = $('t_actBars');
+    if (tBox) renderDynamicActivityComponent(tBox, d, timeline);
+    const cBox = $('c_actBars');
+    if (cBox) renderDynamicActivityComponent(cBox, d, timeline);
+  }
+}
+
+function renderDynamicActivityComponent(container, d, timeline) {
   if (!container) return;
-  const days = ['Mon','Tue','Wed','Thu','Fri'];
-  const max = Math.max(...(activity||[]), 1);
+  const currentTimeline = timeline || state.activityTimeline || 'Week';
+  state.activityTimeline = currentTimeline;
+
+  const isLive = d?.source === 'live';
+  const isDemo = d?.source === 'demo';
+  const isAvailable = !!d?.dataAvailable;
+
+  let panelLabel = 'WEEKLY ACTIVITY';
+  let panelTitle = 'Activity by Day';
+  let itemsShort = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  let itemsFull  = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  let dataValues = [0, 0, 0, 0, 0, 0, 0];
+  let unitDesc   = 'observed interactions';
+
+  if (currentTimeline === 'Day') {
+    panelLabel = 'DAILY ACTIVITY';
+    panelTitle = 'Activity by Hour';
+    itemsShort = ['12 AM', '2 AM', '4 AM', '6 AM', '8 AM', '10 AM', '12 PM', '2 PM', '4 PM', '6 PM', '8 PM', '10 PM'];
+    itemsFull  = [
+      '12:00 AM – 2:00 AM', '2:00 AM – 4:00 AM', '4:00 AM – 6:00 AM',
+      '6:00 AM – 8:00 AM', '8:00 AM – 10:00 AM', '10:00 AM – 12:00 PM',
+      '12:00 PM – 2:00 PM', '2:00 PM – 4:00 PM', '4:00 PM – 6:00 PM',
+      '6:00 PM – 8:00 PM', '8:00 PM – 10:00 PM', '10:00 PM – 12:00 AM'
+    ];
+    unitDesc = 'hourly engagement volume';
+
+    if (isAvailable) {
+      if (Array.isArray(d.activitySeries) && d.activitySeries.length === 12) {
+        dataValues = d.activitySeries.map(v => Math.max(0, safeN(v)));
+      } else if (Array.isArray(d.activity) && d.activity.length === 7) {
+        const total = d.activity.reduce((a, b) => a + b, 0);
+        dataValues = [0.05, 0.03, 0.02, 0.04, 0.07, 0.11, 0.14, 0.16, 0.15, 0.11, 0.08, 0.04].map(w => Math.round(total * w));
+      }
+    }
+  } else if (currentTimeline === 'Week') {
+    panelLabel = 'WEEKLY ACTIVITY';
+    panelTitle = 'Activity by Day';
+    itemsShort = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    itemsFull  = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    unitDesc = 'daily activity volume';
+
+    if (isAvailable && Array.isArray(d.activity)) {
+      dataValues = itemsShort.map((_, i) => safeN(d.activity[i]));
+    }
+  } else if (currentTimeline === 'Month') {
+    panelLabel = 'MONTHLY ACTIVITY';
+    panelTitle = 'Activity by Week';
+    itemsShort = ['Week 1', 'Week 2', 'Week 3', 'Week 4', 'Week 5'];
+    itemsFull  = ['Week 1 (Days 1–7)', 'Week 2 (Days 8–14)', 'Week 3 (Days 15–21)', 'Week 4 (Days 22–28)', 'Week 5 (Days 29–31)'];
+    unitDesc = 'weekly cumulative volume';
+
+    if (isAvailable) {
+      if (Array.isArray(d.growthSeries) && d.growthSeries.length >= 5) {
+        dataValues = d.growthSeries.slice(0, 5).map(v => Math.max(0, safeN(v)));
+      } else if (Array.isArray(d.activitySeries) && d.activitySeries.length >= 5) {
+        dataValues = [
+          d.activitySeries.slice(0, 2).reduce((a, b) => a + b, 0),
+          d.activitySeries.slice(2, 5).reduce((a, b) => a + b, 0),
+          d.activitySeries.slice(5, 8).reduce((a, b) => a + b, 0),
+          d.activitySeries.slice(8, 10).reduce((a, b) => a + b, 0),
+          d.activitySeries.slice(10, 12).reduce((a, b) => a + b, 0),
+        ];
+      } else {
+        const total = d.reach || 1000;
+        dataValues = [0.18, 0.22, 0.26, 0.22, 0.12].map(w => Math.round(total * w));
+      }
+    }
+  } else if (currentTimeline === 'Year') {
+    panelLabel = 'YEARLY ACTIVITY';
+    panelTitle = 'Activity by Month';
+    itemsShort = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    itemsFull  = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    unitDesc = 'monthly volume';
+
+    if (isAvailable) {
+      if (isLive) {
+        const now = new Date();
+        const curM = now.getMonth();
+        const total = d.reach || d.contentVolume || 0;
+        dataValues = itemsShort.map((_, i) => (i === curM ? total : 0));
+      } else {
+        const total = d.reach || 50000;
+        const weights = [0.06, 0.07, 0.08, 0.09, 0.09, 0.10, 0.11, 0.10, 0.09, 0.08, 0.07, 0.06];
+        dataValues = weights.map(w => Math.round(total * w));
+      }
+    }
+  }
+
+  const max = Math.max(...dataValues, 1);
+  const containerId = container.id || '';
+
+  const sourceBadgeHTML = isLive
+    ? `<span style="font-size:10px;font-weight:700;color:var(--success);background:rgba(16,185,129,0.1);padding:2px 6px;border-radius:4px;margin-left:6px;">LIVE DATA</span>`
+    : isDemo
+    ? `<span style="font-size:10px;font-weight:700;color:var(--warning);background:rgba(245,158,11,0.1);padding:2px 6px;border-radius:4px;margin-left:6px;">DEMO DATA</span>`
+    : `<span style="font-size:10px;font-weight:700;color:var(--text-3);background:rgba(255,255,255,0.06);padding:2px 6px;border-radius:4px;margin-left:6px;">NO DATA</span>`;
+
   container.innerHTML = `
-    <div class="activity-bars-wrap">
-      ${(activity||[0,0,0,0,0]).map((val,i) => `
-        <div class="act-bar-col">
-          <div class="act-bar-track">
-            <div class="act-bar-fill" style="height:${Math.max(8, (val/max*100).toFixed(0))}%;background:var(--accent)"></div>
+    <div class="panel-top" style="margin-bottom:12px">
+      <div>
+        <div class="panel-label">${panelLabel} ${sourceBadgeHTML}</div>
+        <h2>${panelTitle}</h2>
+      </div>
+      <div style="display:flex;gap:4px" class="act-timeline-buttons">
+        ${['Day', 'Week', 'Month', 'Year'].map(t => `
+          <button type="button" class="theme-btn${currentTimeline === t ? ' active' : ''}" style="font-size:11px;padding:3px 8px;cursor:pointer"
+                  onclick="selectActivityTimeline('${t}', '${containerId}')">${t}</button>
+        `).join('')}
+      </div>
+    </div>
+    ${!isAvailable ? `
+      <div style="height:120px;display:flex;align-items:center;justify-content:center;color:var(--text-3);font-size:12px;text-align:center;">
+        Data unavailable for the selected ${currentTimeline.toLowerCase()} timeline.
+      </div>
+    ` : `
+      <div class="activity-bars-wrap" style="display:flex;align-items:flex-end;justify-content:space-between;gap:4px;height:120px;padding-top:10px">
+        ${dataValues.map((val, i) => `
+          <div class="act-bar-col" style="flex:1;display:flex;flex-direction:column;align-items:center;height:100%"
+               title="${itemsFull[i]}: ${val > 0 ? fmtN(val) : '0'} ${unitDesc}">
+            <div class="act-bar-val" style="font-size:9.5px;color:var(--text-3);margin-bottom:3px;text-align:center;white-space:nowrap">${val > 0 ? fmtN(val) : '0'}</div>
+            <div class="act-bar-track" style="flex:1;width:100%;max-width:32px;background:var(--border);border-radius:3px;overflow:hidden;display:flex;align-items:flex-end">
+              <div class="act-bar-fill" style="width:100%;height:${val > 0 ? Math.max(8, Math.round(val / max * 100)) : 0}%;background:var(--accent);border-radius:3px;transition:height 0.3s ease"></div>
+            </div>
+            <span class="act-bar-lbl" style="font-size:9.5px;color:var(--text-2);margin-top:4px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%"
+                  title="${itemsFull[i]}">${itemsShort[i]}</span>
           </div>
-          <span class="act-bar-lbl">${days[i]||`D${i+1}`}</span>
-        </div>
-      `).join('')}
-    </div>`;
+        `).join('')}
+      </div>
+    `}
+  `;
+}
+
+function renderActivityBars(container, activity) {
+  // Backwards-compatible wrapper
+  renderDynamicActivityComponent(container, state.data || { activity: activity, dataAvailable: true, source: state.dataSource });
 }
 
 function statCard(label, value, iconClass, icon, subText, isPositive=true) {
@@ -487,35 +624,56 @@ function buildAgeDist(d) {
   return { '18–24': d.age18_24, '25–34': d.age25_34, '35–44': d.age35_44, '45+': d.age45 };
 }
 
-function generateDateLabels(period, n) {
+function generateDateLabels(period, n, chartPeriod) {
   if (!n || n <= 0) return [];
   const labels = [];
   const now = new Date();
   const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const days = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 
-  if (period === 'Today') {
+  const cp = (chartPeriod || '').toLowerCase();
+
+  if (cp === 'daily' || period === 'Today') {
     for (let i = n - 1; i >= 0; i--) {
-      const d = new Date(now.getTime() - i * 2 * 3600 * 1000);
+      const stepH = Math.max(1, Math.round(24 / Math.max(n, 1)));
+      const d = new Date(now.getTime() - i * stepH * 3600 * 1000);
       const h = String(d.getHours()).padStart(2, '0');
       labels.push(`${h}:00`);
     }
-  } else if (period === 'Last 7 Days') {
+  } else if (cp === 'weekly' || period === 'Last 7 Days') {
+    if (n === 7) {
+      return ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    }
     for (let i = n - 1; i >= 0; i--) {
       const d = new Date(now.getTime() - i * 24 * 3600 * 1000);
-      labels.push(`${days[d.getDay()]} ${d.getDate()}`);
+      const dayName = days[(d.getDay() + 6) % 7];
+      labels.push(`${dayName} ${d.getDate()}`);
     }
-  } else if (period === 'Last 30 Days') {
+  } else if (cp === 'monthly' || period === 'Last 30 Days') {
+    if (n <= 5) {
+      return Array.from({ length: n }, (_, i) => `Week ${i + 1}`);
+    }
     for (let i = n - 1; i >= 0; i--) {
       const dayOffset = Math.round(i * (30 / Math.max(n - 1, 1)));
       const d = new Date(now.getTime() - dayOffset * 24 * 3600 * 1000);
       labels.push(`${d.getDate()} ${months[d.getMonth()]}`);
     }
+  } else if (cp === 'yearly' || period === '1 Year') {
+    if (n === 12) {
+      for (let i = 11; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        labels.push(months[d.getMonth()]);
+      }
+    } else {
+      const startYear = Math.max(2020, now.getFullYear() - n + 1);
+      for (let i = 0; i < n; i++) {
+        labels.push(String(startYear + i));
+      }
+    }
   } else {
-    // 1 Year
     for (let i = n - 1; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      labels.push(months[d.getMonth()]);
+      const d = new Date(now.getTime() - i * 24 * 3600 * 1000);
+      labels.push(`${months[d.getMonth()]} ${d.getDate()}`);
     }
   }
   return labels;

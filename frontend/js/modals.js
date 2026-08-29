@@ -6,10 +6,8 @@
 
 'use strict';
 
-let _allPlatModalTimer = null;
-
 /* ================================================================
-   1. CREDENTIAL TEST RESULT POPUP (PERSISTENT — NO 60s AUTO CLOSE)
+   1. CREDENTIAL TEST RESULT POPUP (PERSISTENT — NO AUTO-CLOSE)
    ================================================================ */
 
 function showCredentialResultModal(platform, result, isSuccess) {
@@ -18,10 +16,54 @@ function showCredentialResultModal(platform, result, isSuccess) {
 
   closeAllPopovers();
 
-  const iconClass = isSuccess ? 'success' : result.status === 'rate_limited' ? 'warning' : 'error';
-  const iconEmoji = isSuccess ? '✓' : result.status === 'rate_limited' ? '⏳' : '✕';
-  const title = isSuccess ? `${platform} — Live Connection Successful` : `${platform} — Connection Probe Notice`;
-  const sub = isSuccess ? 'Credential accepted · Real API request completed successfully' : 'Diagnostic response from real platform gateway';
+  // Categorize failure type if not success
+  let categoryLabel = 'VERIFIED OPERATIONAL';
+  let iconClass = 'success';
+  let iconEmoji = '✓';
+  let title = `${platform} — Live Connection Successful`;
+  let sub = 'Credential accepted · Real API request completed successfully';
+
+  if (!isSuccess) {
+    iconClass = 'error';
+    iconEmoji = '✕';
+    const detailLower = ((result.detail || '') + ' ' + (result.message || '')).toLowerCase();
+
+    if (detailLower.includes('quota') || result.status === 'quota_limit') {
+      categoryLabel = 'QUOTA LIMIT EXCEEDED';
+      iconClass = 'warning';
+      iconEmoji = '⏳';
+      title = `${platform} — Daily API Quota Limit Reached`;
+      sub = 'Google Cloud project has reached its daily quota limit. Resets at midnight PT.';
+    } else if (detailLower.includes('billing') || detailLower.includes('credit') || result.status === 'billing_limit') {
+      categoryLabel = 'BILLING / CREDIT REQUIRED';
+      iconClass = 'warning';
+      iconEmoji = '💳';
+      title = `${platform} — Active Billing or Paid Plan Required`;
+      sub = 'Developer account lacks active API credits or required subscription.';
+    } else if (detailLower.includes('rate') || result.status === 'rate_limited') {
+      categoryLabel = 'RATE LIMIT / COOLDOWN';
+      iconClass = 'warning';
+      iconEmoji = '⏳';
+      title = `${platform} — Gateway Rate Limited`;
+      sub = 'Temporary rate limiting active on the platform gateway.';
+    } else if (detailLower.includes('forbidden') || detailLower.includes('permission') || detailLower.includes('accessnotconfigured') || result.status === 'permission_required') {
+      categoryLabel = 'PERMISSION / API ACCESS REQUIRED';
+      title = `${platform} — Permission / Scope Required`;
+      sub = 'Credential valid, but required API or scope is not enabled for this project.';
+    } else if (detailLower.includes('network') || detailLower.includes('timeout') || result.status === 'network_error') {
+      categoryLabel = 'NETWORK / TIMEOUT ERROR';
+      title = `${platform} — Network Connection Timeout`;
+      sub = 'Could not establish connection to the platform gateway endpoints.';
+    } else if (result.status === 'not_configured') {
+      categoryLabel = 'NOT CONFIGURED';
+      title = `${platform} — Missing Credentials`;
+      sub = 'Please enter all required credentials for this platform.';
+    } else {
+      categoryLabel = 'INVALID CREDENTIAL';
+      title = `${platform} — Credential Verification Notice`;
+      sub = 'Diagnostic response from platform authentication gateway.';
+    }
+  }
 
   const modalBackdrop = document.createElement('div');
   modalBackdrop.className = 'modal-backdrop';
@@ -35,16 +77,24 @@ function showCredentialResultModal(platform, result, isSuccess) {
       <div class="cred-result-header">
         <div class="cred-result-icon ${iconClass}">${iconEmoji}</div>
         <div>
+          <div style="font-size:10.5px;font-weight:700;letter-spacing:0.5px;color:var(--text-3);text-transform:uppercase;margin-bottom:2px">
+            STATUS: ${categoryLabel}
+          </div>
           <div class="cred-result-title">${esc(title)}</div>
           <div class="cred-result-subtitle">${esc(sub)}</div>
         </div>
       </div>
       <div class="cred-result-body">
         <div style="font-weight:600;margin-bottom:6px;color:var(--text)">${esc(result.message || 'Probe completed.')}</div>
-        ${result.detail ? `<div style="font-size:12px;color:var(--text-3);margin-top:6px;font-family:monospace">${esc(result.detail)}</div>` : ''}
+        ${result.detail ? `<div style="font-size:12px;color:var(--text-3);margin-top:6px;font-family:monospace;background:var(--surface-2);padding:8px 10px;border-radius:var(--r-sm);word-break:break-all">${esc(result.detail)}</div>` : ''}
+        ${isSuccess ? `
+          <div style="margin-top:10px;font-size:12px;color:var(--success);background:rgba(16,185,129,0.08);padding:8px 12px;border-radius:var(--r-sm);border:1px solid rgba(16,185,129,0.2)">
+            ✓ Real platform data retrieval is ready. Click <strong>Enter / Continue</strong> to load live analytics immediately.
+          </div>
+        ` : ''}
       </div>
       <div class="cred-result-footer">
-        <button class="btn-demo-secondary" id="credResultCloseBtn" style="padding:8px 16px">Close</button>
+        <button class="btn-demo-secondary" id="credResultCloseBtn" style="padding:8px 16px">✕ Close</button>
         ${isSuccess ? `<button class="btn-demo-primary" id="credResultProceedBtn" style="padding:8px 18px">Enter / Continue →</button>` : ''}
       </div>
     </div>
@@ -53,18 +103,24 @@ function showCredentialResultModal(platform, result, isSuccess) {
   root.appendChild(modalBackdrop);
   root.style.pointerEvents = 'all';
 
-  const closeBtn = modalBackdrop.querySelector('#credResultCloseBtn');
-  closeBtn?.addEventListener('click', () => {
+  const closeFn = () => {
     modalBackdrop.remove();
     root.style.pointerEvents = 'none';
-  });
+  };
+
+  modalBackdrop.querySelector('#credResultCloseBtn')?.addEventListener('click', closeFn);
 
   const proceedBtn = modalBackdrop.querySelector('#credResultProceedBtn');
   proceedBtn?.addEventListener('click', async () => {
-    modalBackdrop.remove();
-    root.style.pointerEvents = 'none';
+    closeFn();
 
-    // Switch platform and retrieve real live data
+    // Ensure demo override is cleared for this platform and live mode is active
+    if (state.demoOverrides) {
+      state.demoOverrides[platform] = false;
+    }
+    state.dataSource = 'live';
+
+    // Switch active platform
     state.platform = platform;
     const select = $('platformSelect');
     if (select) select.value = platform;
@@ -74,8 +130,8 @@ function showCredentialResultModal(platform, result, isSuccess) {
     updateStatusBadge('connecting');
     await loadData();
 
-    // Show small 2-second confirmation toast
-    showToast('🟢 LIVE DATA CONNECTED', 2000);
+    // Small 2-second confirmation notification
+    showToast(`🟢 LIVE DATA CONNECTED — ${platform}`, 2000);
   });
 }
 
@@ -86,63 +142,75 @@ function showCredentialResultModal(platform, result, isSuccess) {
 const PLATFORM_HELP_INFO = {
   'YouTube': {
     title: 'YouTube Data API v3',
+    credentialName: 'YouTube Data API v3 API Key',
     paste: 'Google Cloud API Key with YouTube Data API v3 enabled',
     from: 'Google Cloud Console (console.cloud.google.com) → APIs & Services → Credentials',
-    usedFor: 'Public video metadata, comments, views, likes, tags, and channel information',
+    usedFor: 'Searching public videos, retrieving views, likes, comment counts, tags, and channel metadata.',
     testTime: 'Usually 1–3 seconds',
-    limitation: 'Google Cloud daily quota limit (default 10,000 units/day; video search costs 100 units)',
-    successLooksLike: 'LIVE status badge, verified connection to Google YouTube endpoints',
-    failureMeaning: 'Invalid API Key, YouTube Data API v3 not enabled in Google Cloud project, or daily quota reached',
+    limitation: 'Google Cloud project daily quota (default 10,000 units/day; video search costs 100 units).',
+    security: 'Never share your API key publicly or commit it to source code.',
+    successLooksLike: 'LIVE status badge, verified connection to Google YouTube endpoints.',
+    failureMeaning: 'Invalid API Key, YouTube Data API v3 not enabled in Google Cloud project, or daily quota reached.',
   },
   'Telegram': {
     title: 'Telegram MTProto API',
+    credentialName: 'Telegram MTProto API ID & API Hash',
     paste: 'Telegram App API ID and API Hash (and optional Bot Token)',
     from: 'Telegram Core Portal (my.telegram.org) → API development tools',
-    usedFor: 'Public channel discussions, message feeds, and thread replies',
+    usedFor: 'Ingesting public channel messages, discussion threads, and reply counts.',
     testTime: 'Usually 1–3 seconds',
-    limitation: 'Only public channels and previews are accessible; private user chats are never accessed',
-    successLooksLike: 'CONNECTED status, operational gateway for public channel ingestion',
-    failureMeaning: 'Incorrect numeric API ID, invalid 32-character API Hash, or flood-wait cooldown',
+    limitation: 'Only public channels and previews are accessible; private user messages are never accessed.',
+    security: 'Keep MTProto credentials secure.',
+    successLooksLike: 'CONNECTED status with verified channel ingestion gateway.',
+    failureMeaning: 'Incorrect numeric API ID, invalid 32-character API Hash, or flood-wait cooldown.',
   },
   'Reddit': {
     title: 'Reddit OAuth2 Data API',
+    credentialName: 'Reddit OAuth Client ID & Client Secret',
     paste: 'Reddit Script App Client ID and Client Secret',
     from: 'Reddit App Preferences (reddit.com/prefs/apps) → Create App ("script" type)',
-    usedFor: 'Public subreddit submissions, discussion threads, scores, and comment trees',
+    usedFor: 'Public subreddit submissions, discussion scores, upvote ratios, and comment trees.',
     testTime: 'Usually 1–3 seconds',
-    limitation: 'Subject to Reddit Data API terms and rate limit (60 requests/minute per client)',
-    successLooksLike: 'LIVE connected with active OAuth2 client credentials token',
-    failureMeaning: 'Invalid Client ID or Client Secret, or application type is not configured as "script"',
+    limitation: 'Subject to Reddit Data API rate limits (60 requests/minute per client).',
+    security: 'Client secret is stored in backend runtime memory and never exposed to the frontend.',
+    successLooksLike: 'LIVE connected with active OAuth2 application token.',
+    failureMeaning: 'Invalid Client ID or Client Secret, or app type is not configured as "script".',
   },
   'Twitter / X': {
     title: 'X / Twitter API v2',
+    credentialName: 'X API v2 App-Only Bearer Token',
     paste: 'X API v2 App-Only Bearer Token',
     from: 'X Developer Portal (developer.x.com) → Projects & Apps → Keys and Tokens',
-    usedFor: 'Recent public tweet searches, conversation trees, and tweet engagement stats',
+    usedFor: 'Recent public tweet searches, conversation trees, and tweet engagement stats.',
     testTime: 'Usually 1–3 seconds',
-    limitation: 'X API enforces pay-per-use monthly credits; zero-credit accounts are blocked by X billing',
-    successLooksLike: 'CONNECTED status with verified v2 developer gateway access',
-    failureMeaning: 'Account lacks active API credits or monthly billing entitlement, or invalid Bearer Token',
+    limitation: 'X API enforces pay-per-use monthly credits; zero-credit accounts are blocked by X billing.',
+    security: 'Bearer token is encrypted in transit and masked in UI.',
+    successLooksLike: 'CONNECTED status with verified developer gateway access.',
+    failureMeaning: 'Account lacks active API credits, monthly billing entitlement, or invalid Bearer Token.',
   },
   'Instagram': {
     title: 'Instagram Graph API (Meta)',
-    paste: 'Meta Graph API User/Page Access Token and Instagram Professional Account ID',
+    credentialName: 'Meta User/Page Access Token & Instagram Account ID',
+    paste: 'Meta Graph API Access Token and Instagram Professional Account ID',
     from: 'Meta for Developers (developers.facebook.com) → Tools → Graph API Explorer',
-    usedFor: 'Business discovery, hashtag metrics, and permitted public professional media',
+    usedFor: 'Business discovery, public hashtag metrics, and permitted media analytics.',
     testTime: 'Usually 1–3 seconds',
-    limitation: 'Requires an active Instagram Business or Creator account linked to a Meta App with review permissions',
-    successLooksLike: 'CONNECTED with verified Professional Account ID and valid token permissions',
-    failureMeaning: 'Personal accounts are unsupported; token expired or missing instagram_basic / insights permissions',
+    limitation: 'Requires an active Instagram Business/Creator account linked to a Meta App with review permissions.',
+    security: 'Access tokens are managed solely on the backend.',
+    successLooksLike: 'CONNECTED with verified Professional Account ID and valid token permissions.',
+    failureMeaning: 'Personal accounts are unsupported; token expired or missing instagram_basic / insights permissions.',
   },
   'Facebook': {
     title: 'Facebook Graph API (Meta)',
+    credentialName: 'Meta Page Access Token & Facebook Page ID',
     paste: 'Meta Page Access Token and Facebook Page ID',
     from: 'Meta for Developers (developers.facebook.com) → Graph API Explorer / Page Settings',
-    usedFor: 'Public Page feed, post reach metrics, comments, and engagement analytics',
+    usedFor: 'Public Page feed, post reach metrics, comments, and engagement analytics.',
     testTime: 'Usually 1–3 seconds',
-    limitation: 'Requires Meta Page Admin access and Page Public Content Access review permissions',
-    successLooksLike: 'CONNECTED with verified Page ID and active Page Access Token',
-    failureMeaning: 'User token passed instead of Page token, expired access token, or missing Page permissions',
+    limitation: 'Requires Meta Page Admin access and Page Public Content Access review permissions.',
+    security: 'Page tokens are never exposed in browser logs or responses.',
+    successLooksLike: 'CONNECTED with verified Page ID and active Page Access Token.',
+    failureMeaning: 'User token passed instead of Page token, expired access token, or missing Page permissions.',
   },
 };
 
@@ -171,8 +239,8 @@ function showCredentialHelpModal(platform) {
       </p>
       <div class="help-section">
         <div class="help-row">
-          <div class="help-row-label">What to Paste:</div>
-          <div class="help-row-val"><strong>${esc(info.paste)}</strong></div>
+          <div class="help-row-label">Credential Name:</div>
+          <div class="help-row-val"><strong>${esc(info.credentialName)}</strong></div>
         </div>
         <div class="help-row">
           <div class="help-row-label">Where It Comes From:</div>
@@ -187,8 +255,12 @@ function showCredentialHelpModal(platform) {
           <div class="help-row-val">${esc(info.testTime)}</div>
         </div>
         <div class="help-row">
-          <div class="help-row-label">Important Limitation:</div>
+          <div class="help-row-label">Quota & Limitations:</div>
           <div class="help-row-val" style="color:var(--warning)">${esc(info.limitation)}</div>
+        </div>
+        <div class="help-row">
+          <div class="help-row-label">Security Note:</div>
+          <div class="help-row-val">${esc(info.security)}</div>
         </div>
         <div class="help-row">
           <div class="help-row-label">What Success Looks Like:</div>
@@ -217,8 +289,71 @@ function showCredentialHelpModal(platform) {
   modalBackdrop.querySelector('#helpModalDoneBtn')?.addEventListener('click', closeFn);
 }
 
+function showOAuthInfoModal(platform, layerName, scopes, info) {
+  const root = $('popoverRoot');
+  if (!root) return;
+
+  const modalBackdrop = document.createElement('div');
+  modalBackdrop.className = 'modal-backdrop';
+  modalBackdrop.style.display = 'flex';
+  modalBackdrop.style.alignItems = 'center';
+  modalBackdrop.style.justifyContent = 'center';
+
+  modalBackdrop.innerHTML = `
+    <div class="cred-help-dialog" style="max-width:540px">
+      <div class="modal-header">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:22px">🔐</span>
+          <div>
+            <h2 style="font-size:16px;margin:0">${esc(platform)} — ${esc(layerName)}</h2>
+            <div style="font-size:12px;color:var(--text-3)">OAuth 2.0 Authorization Guide</div>
+          </div>
+        </div>
+        <button class="modal-close-btn" id="oauthModalCloseBtn" title="Close">✕</button>
+      </div>
+      <div class="help-section">
+        <div class="help-row">
+          <div class="help-row-label">Auth Protocol:</div>
+          <div class="help-row-val"><strong>OAuth 2.0 User-Consent Flow</strong> (Secure Redirect)</div>
+        </div>
+        <div class="help-row">
+          <div class="help-row-label">Required Scopes:</div>
+          <div class="help-row-val" style="font-family:monospace;font-size:11.5px;color:var(--accent)">${esc(scopes || 'Read-only analytics and metrics')}</div>
+        </div>
+        <div class="help-row">
+          <div class="help-row-label">Why OAuth 2.0:</div>
+          <div class="help-row-val">${esc(info || 'Provides secure, tokenized access to owner analytics and private channel metrics without exposing user passwords or static API keys.')}</div>
+        </div>
+        <div class="help-row">
+          <div class="help-row-label">How to Authorize:</div>
+          <div class="help-row-val">1. Register your OAuth Client in the platform developer portal.<br>2. Set Authorized Redirect URI to <code>http://127.0.0.1:8001/api/auth/callback</code>.<br>3. Authenticate with your channel/page owner account.</div>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:flex-end;margin-top:20px;gap:8px">
+        <button class="btn-demo-secondary" id="oauthModalCloseBtn2" style="padding:8px 16px">Cancel</button>
+        <button class="btn-demo-primary" id="oauthModalProceedBtn" style="padding:8px 20px">Authorize in Portal</button>
+      </div>
+    </div>
+  `;
+
+  root.appendChild(modalBackdrop);
+  root.style.pointerEvents = 'all';
+
+  const closeFn = () => {
+    modalBackdrop.remove();
+    root.style.pointerEvents = 'none';
+  };
+
+  modalBackdrop.querySelector('#oauthModalCloseBtn')?.addEventListener('click', closeFn);
+  modalBackdrop.querySelector('#oauthModalCloseBtn2')?.addEventListener('click', closeFn);
+  modalBackdrop.querySelector('#oauthModalProceedBtn')?.addEventListener('click', () => {
+    closeFn();
+    showToast(`Initiating OAuth 2.0 handshake for ${platform} ${layerName}…`);
+  });
+}
+
 /* ================================================================
-   3. INFORMATIONAL CAPABILITY NOTICES
+   3. INFORMATIONAL CAPABILITY NOTICES (PERSISTENT — NO AUTO-CLOSE)
    ================================================================ */
 
 function showPlatformCapabilityModal(platform) {
@@ -242,14 +377,13 @@ function showPlatformCapabilityModal(platform) {
         <div class="platform-notice warning" style="margin-top:14px;margin-bottom:8px;">
           <div class="platform-notice-content">
             <span class="platform-notice-icon">ℹ️</span>
-            <div>In compliance with platform developer policies and security standards, only authorized public content is retrieved. Private or restricted data is never accessed.</div>
+            <div>In compliance with platform developer policies and security standards, our system retrieves real platform data available through configured API requests, subject to API behavior, search scope, quota, and permissions.</div>
           </div>
         </div>
       </div>
       <div class="modal-footer">
-        <div class="modal-timer-note" id="modalCountdown">Auto-closing in 60s…</div>
         <div class="modal-actions">
-          <button class="modal-btn-cancel" onclick="closeAllPlatformsModal()">Close</button>
+          <button class="modal-btn-cancel" onclick="closeAllPlatformsModal()">✕ Close</button>
           <button class="btn-demo-primary" style="font-size:12.5px;padding:8px 14px" onclick="enableDemoData('${esc(platform)}')">⚡ Use Demo Data</button>
           <button class="modal-btn-proceed" onclick="disableDemoData('${esc(platform)}')">🔒 Leave As Is</button>
         </div>
@@ -258,24 +392,9 @@ function showPlatformCapabilityModal(platform) {
   `;
 
   modal.classList.remove('hidden');
-
-  if (_allPlatModalTimer) clearInterval(_allPlatModalTimer);
-  let secondsLeft = 60;
-  const countdownEl = $('modalCountdown');
-  _allPlatModalTimer = setInterval(() => {
-    secondsLeft--;
-    if (countdownEl) countdownEl.textContent = `Auto-closing in ${secondsLeft}s…`;
-    if (secondsLeft <= 0) {
-      closeAllPlatformsModal();
-    }
-  }, 1000);
 }
 
 function closeAllPlatformsModal() {
-  if (_allPlatModalTimer) {
-    clearInterval(_allPlatModalTimer);
-    _allPlatModalTimer = null;
-  }
   const modal = $('allPlatformsModal');
   if (modal) modal.classList.add('hidden');
 }

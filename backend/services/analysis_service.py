@@ -100,7 +100,7 @@ def _empty_response(request: AnalysisRequest) -> AnalysisResponse:
         },
         trending={"topic": "No information", "keyword": "No information", "topics": [], "keywords": []},
         network={"nodes": 0, "connections": 0, "communities": 0},
-        activity=[0, 0, 0, 0, 0],
+        activity=[0, 0, 0, 0, 0, 0, 0],
         growth_series=[],
         insights={
             "score_status": "No information", "score_message": "No information",
@@ -177,12 +177,14 @@ class DemoDataProvider:
             legacy_emotions["happy"] = max(0, legacy_emotions.get("happy", 0) + diff)
 
         # ----- activity series -----
-        activity_5 = [
+        activity_7 = [
             _drift_i(35 + (seed % 30), tick, 8),
             _drift_i(45 + ((seed // 2) % 35), tick + 1, 8),
             _drift_i(55 + ((seed // 3) % 40), tick + 2, 8),
             _drift_i(65 + ((seed // 5) % 30), tick + 3, 8),
             _drift_i(50 + ((seed // 7) % 35), tick + 4, 8),
+            _drift_i(60 + ((seed // 4) % 30), tick + 5, 8),
+            _drift_i(40 + ((seed // 6) % 25), tick + 6, 8),
         ]
 
         # ----- growth series (7 points for chart) -----
@@ -274,7 +276,7 @@ class DemoDataProvider:
                 "topics": topic_variants, "keywords": keywords,
             },
             network=network_legacy,
-            activity=activity_5,
+            activity=activity_7,
             growth_series=growth_series,
             insights=insights_dict,
             # extended keys

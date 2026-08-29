@@ -58,9 +58,8 @@ function showAllPlatformsModal() {
         </div>
       </div>
       <div class="modal-footer">
-        <div class="modal-timer-note" id="modalCountdown">Auto-closing in 60s…</div>
         <div class="modal-actions">
-          <button class="modal-btn-cancel" onclick="closeAllPlatformsModal()">Close</button>
+          <button class="modal-btn-cancel" onclick="closeAllPlatformsModal()">✕ Close</button>
           <button class="btn-demo-primary" style="font-size:12.5px;padding:8px 14px" onclick="enableDemoData('All Platforms')">⚡ Use Demo Data</button>
           <button class="modal-btn-proceed" onclick="disableDemoData('All Platforms')">Proceed with Live Data</button>
         </div>
@@ -69,17 +68,6 @@ function showAllPlatformsModal() {
   `;
 
   modal.classList.remove('hidden');
-
-  if (_allPlatModalTimer) clearInterval(_allPlatModalTimer);
-  let secondsLeft = 60;
-  const countdownEl = $('modalCountdown');
-  _allPlatModalTimer = setInterval(() => {
-    secondsLeft--;
-    if (countdownEl) countdownEl.textContent = `Auto-closing in ${secondsLeft}s…`;
-    if (secondsLeft <= 0) {
-      closeAllPlatformsModal();
-    }
-  }, 1000);
 }
 
 function checkPlatformNotice(platform) {

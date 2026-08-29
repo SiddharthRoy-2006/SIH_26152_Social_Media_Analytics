@@ -66,6 +66,35 @@ class YouTubeConnector(PlatformConnector):
     def check_health(self) -> PlatformCapability:
         now = datetime.now(timezone.utc)
 
+        data_api_layer = {
+            "name": "YouTube Data API v3",
+            "access_type": "API Key",
+            "usage": "Public video search, video metadata, engagement statistics, and comment threads.",
+            "provides": ["Search results", "Views, Likes, Comments", "Video categories & tags", "Top-level comment threads"],
+            "auth_required": False,
+            "status": "CONNECTED" if self._api_key else "NOT_CONFIGURED",
+        }
+        analytics_api_layer = {
+            "name": "YouTube Analytics API",
+            "access_type": "Google OAuth 2.0",
+            "usage": "Channel owner audience retention, viewer demographics, and estimated watch time.",
+            "provides": ["Viewer demographics", "Audience retention", "Geographic watch time"],
+            "auth_required": True,
+            "status": "NOT_CONNECTED",
+        }
+        reporting_api_layer = {
+            "name": "YouTube Reporting API",
+            "access_type": "Google OAuth 2.0",
+            "usage": "Bulk scheduled historical channel reporting datasets.",
+            "provides": ["Scheduled bulk reporting jobs", "Historical daily aggregated stats"],
+            "auth_required": True,
+            "status": "NOT_CONNECTED",
+        }
+
+        access_layers = [data_api_layer, analytics_api_layer, reporting_api_layer]
+        supported_metrics = ["views", "likes", "comments", "video_metadata", "channel_title", "tags", "sentiment", "network_topology"]
+        unsupported_metrics = ["shares", "audience_demographics", "direct_subscriber_stream"]
+
         if not self._api_key:
             return PlatformCapability(
                 platform="YouTube",
@@ -74,12 +103,16 @@ class YouTubeConnector(PlatformConnector):
                 credential_fields=["api_key"],
                 approx_test_time="1-3 seconds",
                 last_checked=now,
+                access_layers=access_layers,
+                supported_metrics=supported_metrics,
+                unsupported_metrics=unsupported_metrics,
             )
 
         try:
             svc = self._get_service()
             # Cheapest possible probe: 1 quota unit
             svc.channels().list(part="id", id="UC_x5XG1OV2P6uZZ5FSM9Ttw", maxResults=1).execute()
+            data_api_layer["status"] = "CONNECTED"
             return PlatformCapability(
                 platform="YouTube",
                 status=PlatformStatus.CONNECTED,
@@ -89,6 +122,9 @@ class YouTubeConnector(PlatformConnector):
                 approx_test_time="1-3 seconds",
                 last_checked=now,
                 last_successful=now,
+                access_layers=access_layers,
+                supported_metrics=supported_metrics,
+                unsupported_metrics=unsupported_metrics,
             )
         except Exception as exc:
             error_msg = sanitize_error(str(exc)) or str(exc)
@@ -98,9 +134,11 @@ class YouTubeConnector(PlatformConnector):
             if "quota" in error_msg.lower() or "rateLimitExceeded" in error_msg:
                 status = PlatformStatus.RATE_LIMITED
                 reason = "YouTube daily quota has been exceeded. Resets at midnight PT."
+                data_api_layer["status"] = "QUOTA_LIMITED"
             elif "forbidden" in error_msg.lower() or "accessNotConfigured" in error_msg or "keyInvalid" in error_msg or "API key not valid" in error_msg:
                 status = PlatformStatus.ERROR
                 reason = "YouTube API key is invalid or YouTube Data API v3 is not enabled."
+                data_api_layer["status"] = "INVALID_CREDENTIAL"
 
             return PlatformCapability(
                 platform="YouTube",
@@ -110,6 +148,9 @@ class YouTubeConnector(PlatformConnector):
                 approx_test_time="1-3 seconds",
                 last_checked=now,
                 error_detail=error_msg[:200],
+                access_layers=access_layers,
+                supported_metrics=supported_metrics,
+                unsupported_metrics=unsupported_metrics,
             )
 
 

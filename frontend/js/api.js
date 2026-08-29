@@ -138,7 +138,9 @@ async function loadData() {
 
   const refreshBtn = $('refreshBtn');
   if (refreshBtn) refreshBtn.classList.add('spinning');
-  updateStatusBadge('connecting');
+  const cap = state.platformCapabilities ? state.platformCapabilities[state.platform] : null;
+  const isCapLive = cap?.status === 'connected' || cap?.status === 'limited';
+  updateStatusBadge(isCapLive ? 'fetching' : 'connecting');
 
   // Verify or discover backend URL
   if (!_apiBaseVerified) {
@@ -209,13 +211,23 @@ function updateStatusBadge(s) {
   const text  = $('statusText');
   if (!badge) return;
   badge.className = 'status-badge';
-  if (s === 'live')            { badge.classList.add('live');    text.textContent = `LIVE — ${state.platform}`; }
-  else if (s === 'limited')    { badge.classList.add('limited'); text.textContent = 'Limited Access'; }
-  else if (s === 'demo')       { badge.classList.add('demo');    text.textContent = 'DEMO (Explicit Selection)'; }
-  else if (s === 'offline')    { text.textContent = 'Backend Offline'; }
-  else if (s === 'connecting') { text.textContent = 'Connecting…'; }
-  else {
-    const cap = state.platformCapabilities ? state.platformCapabilities[state.platform] : null;
+  const cap = state.platformCapabilities ? state.platformCapabilities[state.platform] : null;
+  const isCapLive = cap?.status === 'connected' || cap?.status === 'limited';
+
+  if (s === 'live') {
+    badge.classList.add('live');
+    text.textContent = `LIVE — ${state.platform}`;
+  } else if (s === 'limited') {
+    badge.classList.add('limited');
+    text.textContent = 'Limited Access';
+  } else if (s === 'demo') {
+    badge.classList.add('demo');
+    text.textContent = 'DEMO (Explicit Selection)';
+  } else if (s === 'offline') {
+    text.textContent = 'Backend Offline';
+  } else if (s === 'connecting' || s === 'fetching') {
+    text.textContent = isCapLive ? 'Fetching live data…' : 'Connecting…';
+  } else {
     if (cap?.status === 'not_configured') text.textContent = 'Not Configured';
     else if (cap?.status === 'unavailable') text.textContent = 'Unavailable';
     else text.textContent = 'No Data';

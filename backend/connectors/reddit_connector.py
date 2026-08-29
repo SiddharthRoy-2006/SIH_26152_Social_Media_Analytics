@@ -86,6 +86,27 @@ class RedditConnector(PlatformConnector):
     def check_health(self) -> PlatformCapability:
         now = datetime.now(timezone.utc)
 
+        app_layer = {
+            "name": "Reddit OAuth2 App (Read-Only Script/App)",
+            "access_type": "OAuth 2.0 Client ID & Client Secret",
+            "usage": "Subreddit public submission search, post score tracking, comment tree retrieval.",
+            "provides": ["Subreddit submissions", "Upvotes & score distribution", "Comment trees & replies"],
+            "auth_required": False,
+            "status": "CONNECTED" if (self._client_id and self._client_secret) else "NOT_CONFIGURED",
+        }
+        user_layer = {
+            "name": "Reddit User Authorization",
+            "access_type": "OAuth 2.0 User Access Token",
+            "usage": "Authenticated user subscribed feed and moderation telemetry.",
+            "provides": ["User subreddit feeds", "Vote stream ingestion"],
+            "auth_required": True,
+            "status": "NOT_CONNECTED",
+        }
+
+        access_layers = [app_layer, user_layer]
+        supported_metrics = ["posts", "upvotes", "score", "comments", "sentiment", "subreddit_metadata"]
+        unsupported_metrics = ["direct_shares", "private_messages", "age_demographics"]
+
         if not self._client_id and not self._client_secret:
             return PlatformCapability(
                 platform="Reddit",
@@ -95,6 +116,9 @@ class RedditConnector(PlatformConnector):
                 approx_test_time="1-3 seconds",
                 available_data=["subreddit_search", "posts", "comments"],
                 last_checked=now,
+                access_layers=access_layers,
+                supported_metrics=supported_metrics,
+                unsupported_metrics=unsupported_metrics,
             )
 
         if (self._client_id and not self._client_secret) or (self._client_secret and not self._client_id):
@@ -106,11 +130,15 @@ class RedditConnector(PlatformConnector):
                 approx_test_time="1-3 seconds",
                 available_data=["subreddit_search", "posts", "comments"],
                 last_checked=now,
+                access_layers=access_layers,
+                supported_metrics=supported_metrics,
+                unsupported_metrics=unsupported_metrics,
             )
 
         try:
             token = self._get_access_token_sync()
             if token:
+                app_layer["status"] = "CONNECTED"
                 return PlatformCapability(
                     platform="Reddit",
                     status=PlatformStatus.CONNECTED,
@@ -120,8 +148,12 @@ class RedditConnector(PlatformConnector):
                     approx_test_time="1-3 seconds",
                     last_checked=now,
                     last_successful=now,
+                    access_layers=access_layers,
+                    supported_metrics=supported_metrics,
+                    unsupported_metrics=unsupported_metrics,
                 )
             else:
+                app_layer["status"] = "INVALID_CREDENTIAL"
                 return PlatformCapability(
                     platform="Reddit",
                     status=PlatformStatus.ERROR,
@@ -131,6 +163,9 @@ class RedditConnector(PlatformConnector):
                     approx_test_time="1-3 seconds",
                     last_checked=now,
                     error_detail="Authentication token request returned no token",
+                    access_layers=access_layers,
+                    supported_metrics=supported_metrics,
+                    unsupported_metrics=unsupported_metrics,
                 )
         except httpx.HTTPStatusError as exc:
             status = PlatformStatus.ERROR
@@ -138,8 +173,10 @@ class RedditConnector(PlatformConnector):
             if exc.response.status_code == 429:
                 status = PlatformStatus.RATE_LIMITED
                 reason = "Reddit API rate limit reached (60 req/min limit)."
+                app_layer["status"] = "RATE_LIMITED"
             elif exc.response.status_code in (401, 403):
                 reason = "Reddit API credentials rejected (invalid Client ID or Secret)."
+                app_layer["status"] = "INVALID_CREDENTIAL"
 
             return PlatformCapability(
                 platform="Reddit",
@@ -150,6 +187,9 @@ class RedditConnector(PlatformConnector):
                 approx_test_time="1-3 seconds",
                 last_checked=now,
                 error_detail=f"HTTP {exc.response.status_code}",
+                access_layers=access_layers,
+                supported_metrics=supported_metrics,
+                unsupported_metrics=unsupported_metrics,
             )
         except Exception as exc:
             return PlatformCapability(
@@ -161,6 +201,9 @@ class RedditConnector(PlatformConnector):
                 approx_test_time="1-3 seconds",
                 last_checked=now,
                 error_detail=str(exc)[:200],
+                access_layers=access_layers,
+                supported_metrics=supported_metrics,
+                unsupported_metrics=unsupported_metrics,
             )
 
 

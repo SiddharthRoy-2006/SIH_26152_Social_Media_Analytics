@@ -119,10 +119,10 @@ function renderTopicDashboard(ca, d) {
       </div>` : `
       <!-- 3. Successful Analysis State -->
       <div class="stats-grid">
-        ${statCard('Total Reach',     fmt(d.reach),      'ic-blue',  '📡', `${d.growth>=0?'+':''}${pct(d.growth)} vs prev`, d.growth>=0)}
-        ${statCard('Total Likes',     fmt(d.likes),      'ic-red',   '♥', `${fmt(d.shares)} shares`, true)}
-        ${statCard('Comments',        fmt(d.comments),   'ic-green',  '💬', `${fmt(d.contentVolume)} posts published`, true)}
-        ${statCard('Engagement Rate', pct(d.engagement), 'ic-purple', '✦', d.scoreStatus || 'Engagement quality', d.engagement>=5)}
+        ${statCard(state.platform === 'YouTube' ? 'Total Views (Returned)' : 'Total Reach', fmt(d.reach), 'ic-blue', '📡', isLive ? (state.platform === 'YouTube' ? 'Sum of returned video views' : 'Estimated reach') : 'Simulated dataset', true)}
+        ${statCard('Total Likes', fmt(d.likes), 'ic-red', '♥', isLive ? 'Observed in retrieved records' : `${fmt(d.shares)} shares`, true)}
+        ${statCard('Comments', fmt(d.comments), 'ic-green', '💬', `${fmt(d.contentVolume)} ${state.platform==='YouTube'?'videos':'posts'} retrieved`, true)}
+        ${statCard('Engagement Rate', pct(d.engagement), 'ic-purple', '✦', isLive ? 'Calculated from returned records' : (d.scoreStatus || 'Engagement quality'), d.engagement>=1.5)}
       </div>
 
       <!-- Area Chart + Score Ring -->
@@ -148,12 +148,7 @@ function renderTopicDashboard(ca, d) {
 
       <!-- Activity + AI Preview -->
       <div class="grid-1-1">
-        <div class="panel">
-          <div class="panel-top">
-            <div><div class="panel-label">WEEKLY ACTIVITY</div><h2>Activity by Day</h2></div>
-          </div>
-          <div id="t_actBars"></div>
-        </div>
+        <div class="panel" id="t_actBars"></div>
         <div class="panel">
           <div class="panel-top">
             <div><div class="panel-label">AI INTELLIGENCE</div><h2>Quick Insights</h2></div>
@@ -272,7 +267,7 @@ function renderTopicDashboard(ca, d) {
 
   requestAnimationFrame(() => {
     // Area chart
-    const labels = d.growthSeries.length > 0 ? generateDateLabels(d.period, d.growthSeries.length) : [];
+    const labels = d.growthSeries.length > 0 ? generateDateLabels(d.period, d.growthSeries.length, state.chartPeriod) : [];
     renderAreaChart($('t_areaChart'), d.growthSeries, labels);
 
     // Score ring
@@ -281,8 +276,8 @@ function renderTopicDashboard(ca, d) {
       msg: d.scoreMsg || 'Based on active topic data',
     });
 
-    // Activity bars
-    renderActivityBars($('t_actBars'), d.activity);
+    // Dynamic Activity Component (Day / Week / Month / Year)
+    renderDynamicActivityComponent($('t_actBars'), d);
 
     // AI Preview
     renderAICards($('t_aiPreview'), (d.aiInsights || []).slice(0, 2));

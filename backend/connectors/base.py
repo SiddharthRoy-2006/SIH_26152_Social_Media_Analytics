@@ -90,6 +90,10 @@ class PlatformCapability:
     last_checked: datetime | None = None
     last_successful: datetime | None = None
     error_detail: str | None = None
+    access_layers: list[dict[str, Any]] = field(default_factory=list)
+    supported_metrics: list[str] = field(default_factory=list)
+    unsupported_metrics: list[str] = field(default_factory=list)
+    last_data_retrieval: datetime | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -102,6 +106,10 @@ class PlatformCapability:
             "last_checked": self.last_checked.isoformat() if self.last_checked else None,
             "last_successful": self.last_successful.isoformat() if self.last_successful else None,
             "error_detail": sanitize_error(self.error_detail),
+            "access_layers": self.access_layers,
+            "supported_metrics": self.supported_metrics,
+            "unsupported_metrics": self.unsupported_metrics,
+            "last_data_retrieval": self.last_data_retrieval.isoformat() if self.last_data_retrieval else None,
         }
 
 
