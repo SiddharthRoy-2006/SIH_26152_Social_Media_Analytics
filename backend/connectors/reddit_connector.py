@@ -83,7 +83,7 @@ class RedditConnector(PlatformConnector):
         self._token_expires_at = None
         self._cache.clear()
 
-    def check_health(self) -> PlatformCapability:
+    def check_health(self, force_probe: bool = False) -> PlatformCapability:
         now = datetime.now(timezone.utc)
 
         app_layer = {
@@ -130,6 +130,22 @@ class RedditConnector(PlatformConnector):
                 approx_test_time="1-3 seconds",
                 available_data=["subreddit_search", "posts", "comments"],
                 last_checked=now,
+                access_layers=access_layers,
+                supported_metrics=supported_metrics,
+                unsupported_metrics=unsupported_metrics,
+            )
+
+        if not force_probe:
+            app_layer["status"] = "CONNECTED"
+            return PlatformCapability(
+                platform="Reddit",
+                status=PlatformStatus.CONNECTED,
+                reason="Reddit OAuth2 credentials are configured and ready.",
+                available_data=["subreddit_search", "posts", "comments"],
+                credential_fields=["client_id", "client_secret"],
+                approx_test_time="1-3 seconds",
+                last_checked=now,
+                last_successful=now,
                 access_layers=access_layers,
                 supported_metrics=supported_metrics,
                 unsupported_metrics=unsupported_metrics,
@@ -191,11 +207,25 @@ class RedditConnector(PlatformConnector):
                 supported_metrics=supported_metrics,
                 unsupported_metrics=unsupported_metrics,
             )
-        except Exception as exc:
+        except (httpx.TimeoutException, TimeoutError):
             return PlatformCapability(
                 platform="Reddit",
-                status=PlatformStatus.ERROR,
-                reason=f"Reddit probe failed: {str(exc)[:120]}",
+                status=PlatformStatus.UNAVAILABLE,
+                reason="Reddit API network connection timed out.",
+                available_data=["subreddit_search", "posts", "comments"],
+                credential_fields=["client_id", "client_secret"],
+                approx_test_time="1-3 seconds",
+                last_checked=now,
+                error_detail="Connection timeout",
+                access_layers=access_layers,
+                supported_metrics=supported_metrics,
+                unsupported_metrics=unsupported_metrics,
+            )
+        except httpx.NetworkError as exc:
+            return PlatformCapability(
+                platform="Reddit",
+                status=PlatformStatus.UNAVAILABLE,
+                reason=f"Reddit API network connection failed: {sanitize_error(str(exc))}",
                 available_data=["subreddit_search", "posts", "comments"],
                 credential_fields=["client_id", "client_secret"],
                 approx_test_time="1-3 seconds",
@@ -205,6 +235,21 @@ class RedditConnector(PlatformConnector):
                 supported_metrics=supported_metrics,
                 unsupported_metrics=unsupported_metrics,
             )
+        except Exception as exc:
+            err_str = str(exc)
+            is_internal = isinstance(exc, (NameError, TypeError, AttributeError, ImportError, ValueError))
+            return PlatformCapability(
+                platform="Reddit",
+                status=PlatformStatus.ERROR,
+                reason=f"Internal error during Reddit verification: {type(exc).__name__}: {sanitize_error(err_str)}" if is_internal else f"Reddit probe failed: {sanitize_error(err_str)[:120]}",
+                available_data=["subreddit_search", "posts", "comments"],
+                credential_fields=["client_id", "client_secret"],
+                approx_test_time="1-3 seconds",
+                last_checked=now,
+                error_detail=str(exc)[:200],
+                access_layers=access_layers,
+            )
+
 
 
     async def search(

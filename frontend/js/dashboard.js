@@ -141,6 +141,7 @@ function renderGeneralDashboard(ca, d) {
           <div><div class="panel-label">AI INTELLIGENCE LAYER</div><h2>Automated Strategic Insights & Alerts</h2></div>
           <button class="panel-action" id="g_refreshInsights">↻ Refresh</button>
         </div>
+        <div id="g_aiSummary"></div>
         <div id="g_aiInsights"></div>
       </div>
 
@@ -202,7 +203,8 @@ function renderGeneralDashboard(ca, d) {
     renderGeoBars($('g_geo'), d.geoDist);
     renderGeoBars($('g_lang'), d.langDist);
 
-    // AI Insights
+    // AI Insights & Summary
+    renderAISummary($('g_aiSummary'), d.aiSummary);
     renderAICards($('g_aiInsights'), d.aiInsights, true);
 
     // Propagation
@@ -219,6 +221,44 @@ function renderGeneralDashboard(ca, d) {
    2. REUSABLE SUB-PANEL RENDERERS
    ================================================================ */
 
+function renderAISummary(container, summary) {
+  if (!container) return;
+  if (!summary || (!summary.what_happened && !summary.overall_text)) {
+    container.innerHTML = '';
+    return;
+  }
+
+  container.innerHTML = `
+    <div class="ai-summary-box" style="margin-bottom:16px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:14px 16px;box-shadow:var(--shadow-xs)">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:16px;color:var(--accent)">✦</span>
+          <h3 style="font-size:14px;font-weight:600;color:var(--text);margin:0">Verified AI Intelligence Summary</h3>
+        </div>
+        <span style="font-size:11px;padding:3px 8px;border-radius:var(--r-full);background:var(--accent-light);color:var(--accent-text);font-weight:500">Qwen3-4B Grounded</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));gap:12px">
+        <div style="background:var(--surface-2);border-radius:var(--r-sm);padding:10px 12px;border-left:3px solid var(--accent)">
+          <div style="font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;margin-bottom:4px">1. What Happened</div>
+          <div style="font-size:12px;color:var(--text);line-height:1.4">${esc(summary.what_happened || '')}</div>
+        </div>
+        <div style="background:var(--surface-2);border-radius:var(--r-sm);padding:10px 12px;border-left:3px solid var(--purple, #7c3aed)">
+          <div style="font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;margin-bottom:4px">2. Why It Matters</div>
+          <div style="font-size:12px;color:var(--text);line-height:1.4">${esc(summary.why_it_matters || '')}</div>
+        </div>
+        <div style="background:var(--surface-2);border-radius:var(--r-sm);padding:10px 12px;border-left:3px solid var(--info, #0284c7)">
+          <div style="font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;margin-bottom:4px">3. Main Evidence</div>
+          <div style="font-size:12px;color:var(--text);line-height:1.4">${esc(summary.evidence || '')}</div>
+        </div>
+        <div style="background:var(--surface-2);border-radius:var(--r-sm);padding:10px 12px;border-left:3px solid var(--success, #059669)">
+          <div style="font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;margin-bottom:4px">4. What To Do Next</div>
+          <div style="font-size:12px;color:var(--text);line-height:1.4">${esc(summary.next_steps || '')}</div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 function renderAICards(container, insights, isGrid=false) {
   if (!container || !insights || !insights.length) {
     if (container) container.innerHTML = '<p style="color:var(--text-3);font-size:13px;padding:8px 0">No active alerts.</p>';
@@ -226,15 +266,26 @@ function renderAICards(container, insights, isGrid=false) {
   }
   container.innerHTML = `
     <div class="ai-cards-list${isGrid ? ' grid' : ''}">
-      ${insights.map(item => `
+      ${insights.map(item => {
+        const hasStructured = item.insight || item.evidence || item.reason || item.impact || item.recommendation;
+        return `
         <div class="ai-card ${item.type || 'info'}">
           <div class="ai-card-icon">${item.icon || '✦'}</div>
           <div class="ai-card-body">
-            <div class="ai-card-title">${esc(item.title || '')}</div>
+            <div class="ai-card-title">${esc(item.title || item.insight || '')}</div>
             <div class="ai-card-text">${esc(item.text || '')}</div>
+            ${hasStructured ? `
+              <div class="ai-card-structured" style="margin-top:10px;padding-top:8px;border-top:1px dashed var(--border);font-size:12px;display:flex;flex-direction:column;gap:5px;">
+                ${item.insight ? `<div><strong style="color:var(--text);font-size:11px;text-transform:uppercase">Insight:</strong> <span style="color:var(--text-1);font-weight:500">${esc(item.insight)}</span></div>` : ''}
+                ${item.evidence ? `<div><strong style="color:var(--accent);font-size:11px;text-transform:uppercase">Evidence:</strong> <span style="color:var(--text-2)">${esc(item.evidence)}</span></div>` : ''}
+                ${item.reason ? `<div><strong style="color:var(--text-3);font-size:11px;text-transform:uppercase">Why:</strong> <span style="color:var(--text-2)">${esc(item.reason)}</span></div>` : ''}
+                ${item.impact ? `<div><strong style="color:var(--warning, #d97706);font-size:11px;text-transform:uppercase">Impact:</strong> <span style="color:var(--text-2)">${esc(item.impact)}</span></div>` : ''}
+                ${item.recommendation ? `<div><strong style="color:var(--success, #059669);font-size:11px;text-transform:uppercase">Recommendation:</strong> <span style="color:var(--text-1);font-weight:600">${esc(item.recommendation)}</span></div>` : ''}
+              </div>
+            ` : ''}
           </div>
-        </div>
-      `).join('')}
+        </div>`;
+      }).join('')}
     </div>`;
 }
 
@@ -682,6 +733,7 @@ function renderAIPage(ca, d) {
           <div><div class="panel-label">BASELINE INTELLIGENCE</div><h2>Current Intelligence Summary</h2></div>
           <button class="panel-action" onclick="loadData();showToast('Refreshing insights…')">↻ Refresh</button>
         </div>
+        <div id="ai_summary_container"></div>
         <div id="ai_baseline"></div>
       </div>
 
@@ -699,6 +751,7 @@ function renderAIPage(ca, d) {
     </div>`;
 
   requestAnimationFrame(() => {
+    renderAISummary($('ai_summary_container'), d.aiSummary);
     if (warnings.length) renderAICards($('ai_warnings'), warnings, true);
     const baseline = d.aiInsights.filter(i=>i.type!=='warning'&&i.type!=='alert');
     renderAICards($('ai_baseline'), baseline, true);

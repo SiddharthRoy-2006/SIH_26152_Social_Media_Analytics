@@ -134,7 +134,7 @@ class PlatformConnector(ABC):
         ...
 
     @abstractmethod
-    def check_health(self) -> PlatformCapability:
+    def check_health(self, force_probe: bool = False) -> PlatformCapability:
         """
         Probe the platform API and return current capability.
 

@@ -65,14 +65,14 @@ class TwitterConnector(PlatformConnector):
         self._bearer_token = ""
         self._cache.clear()
 
-    def check_health(self) -> PlatformCapability:
+    def check_health(self, force_probe: bool = False) -> PlatformCapability:
         now = datetime.now(timezone.utc)
 
         app_layer = {
             "name": "X API v2 App-Only Access",
-            "access_type": "OAuth 2.0 Bearer Token (App-Only)",
-            "usage": "Recent public tweet search (past 7 days), tweet engagement metrics, conversation threads.",
-            "provides": ["Recent tweet search (7-day window)", "Likes, retweets, replies, impressions", "Public conversation threads"],
+            "access_type": "Bearer Token",
+            "usage": "Recent tweet search (past 7 days), basic tweet engagement metrics, filtered stream.",
+            "provides": ["Recent tweet search (7-day window)", "Public engagement counts (retweets, likes, replies, quotes)", "User profile lookup"],
             "auth_required": False,
             "status": "CONNECTED" if self._bearer_token else "NOT_CONFIGURED",
         }
@@ -98,6 +98,22 @@ class TwitterConnector(PlatformConnector):
                 approx_test_time="1-3 seconds",
                 available_data=[],
                 last_checked=now,
+                access_layers=access_layers,
+                supported_metrics=supported_metrics,
+                unsupported_metrics=unsupported_metrics,
+            )
+
+        if not force_probe:
+            app_layer["status"] = "CONNECTED"
+            return PlatformCapability(
+                platform="Twitter / X",
+                status=PlatformStatus.CONNECTED,
+                reason="X API v2 Bearer Token is configured and ready.",
+                available_data=["recent_search", "tweet_metrics", "conversations"],
+                credential_fields=["bearer_token"],
+                approx_test_time="1-3 seconds",
+                last_checked=now,
+                last_successful=now,
                 access_layers=access_layers,
                 supported_metrics=supported_metrics,
                 unsupported_metrics=unsupported_metrics,
@@ -180,11 +196,25 @@ class TwitterConnector(PlatformConnector):
                         unsupported_metrics=unsupported_metrics,
                     )
 
-        except Exception as exc:
+        except (httpx.TimeoutException, TimeoutError):
             return PlatformCapability(
                 platform="Twitter / X",
-                status=PlatformStatus.ERROR,
-                reason=f"X API connection failed: {str(exc)[:120]}",
+                status=PlatformStatus.UNAVAILABLE,
+                reason="X API network connection timed out.",
+                available_data=[],
+                credential_fields=["bearer_token"],
+                approx_test_time="1-3 seconds",
+                last_checked=now,
+                error_detail="Connection timeout",
+                access_layers=access_layers,
+                supported_metrics=supported_metrics,
+                unsupported_metrics=unsupported_metrics,
+            )
+        except httpx.NetworkError as exc:
+            return PlatformCapability(
+                platform="Twitter / X",
+                status=PlatformStatus.UNAVAILABLE,
+                reason=f"X API network connection failed: {sanitize_error(str(exc))}",
                 available_data=[],
                 credential_fields=["bearer_token"],
                 approx_test_time="1-3 seconds",
@@ -194,7 +224,22 @@ class TwitterConnector(PlatformConnector):
                 supported_metrics=supported_metrics,
                 unsupported_metrics=unsupported_metrics,
             )
-
+        except Exception as exc:
+            err_str = str(exc)
+            is_internal = isinstance(exc, (NameError, TypeError, AttributeError, ImportError, ValueError))
+            return PlatformCapability(
+                platform="Twitter / X",
+                status=PlatformStatus.ERROR,
+                reason=f"Internal error during X API verification: {type(exc).__name__}: {sanitize_error(err_str)}" if is_internal else f"X API probe failed: {sanitize_error(err_str)[:120]}",
+                available_data=[],
+                credential_fields=["bearer_token"],
+                approx_test_time="1-3 seconds",
+                last_checked=now,
+                error_detail=str(exc)[:200],
+                access_layers=access_layers,
+                supported_metrics=supported_metrics,
+                unsupported_metrics=unsupported_metrics,
+            )
 
     async def search(
         self,

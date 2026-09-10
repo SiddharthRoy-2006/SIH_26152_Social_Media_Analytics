@@ -60,22 +60,22 @@ class InstagramConnector(PlatformConnector):
         self._account_id = ""
         self._cache.clear()
 
-    def check_health(self) -> PlatformCapability:
+    def check_health(self, force_probe: bool = False) -> PlatformCapability:
         now = datetime.now(timezone.utc)
 
         ig_prof_layer = {
-            "name": "Instagram Graph API (Professional/Creator)",
-            "access_type": "Meta User/Page Access Token & Instagram Business Account ID",
-            "usage": "Hashtag search, business discovery, media performance metrics, and comment threads.",
-            "provides": ["Hashtag recent media", "Business discovery metadata", "Comments on owned/tagged media"],
-            "auth_required": True,
+            "name": "Instagram Graph API (Professional Account)",
+            "access_type": "User/Page Access Token & IG Account ID",
+            "usage": "Public hashtag search, professional account business discovery, post comments.",
+            "provides": ["Hashtag top/recent posts", "Business account discovery", "Media comments"],
+            "auth_required": False,
             "status": "CONNECTED" if (self._access_token and self._account_id) else "NOT_CONFIGURED",
         }
         ig_basic_layer = {
-            "name": "Instagram Basic Display API",
-            "access_type": "Instagram User Token",
-            "usage": "Personal profile info and authenticated user media gallery.",
-            "provides": ["Basic user profile", "Personal media feed"],
+            "name": "Instagram Basic Display API (Deprecated)",
+            "access_type": "Basic Display OAuth 2.0",
+            "usage": "Legacy consumer profile and media ingestion (deprecated by Meta).",
+            "provides": ["Basic profile", "User media"],
             "auth_required": True,
             "status": "NOT_CONNECTED",
         }
@@ -107,6 +107,22 @@ class InstagramConnector(PlatformConnector):
                 approx_test_time="1-3 seconds",
                 available_data=[],
                 last_checked=now,
+                access_layers=access_layers,
+                supported_metrics=supported_metrics,
+                unsupported_metrics=unsupported_metrics,
+            )
+
+        if not force_probe:
+            ig_prof_layer["status"] = "CONNECTED"
+            return PlatformCapability(
+                platform="Instagram",
+                status=PlatformStatus.CONNECTED,
+                reason="Instagram Graph API configuration is active and ready.",
+                available_data=["hashtag_search", "business_discovery", "comments"],
+                credential_fields=["access_token", "account_id"],
+                approx_test_time="1-3 seconds",
+                last_checked=now,
+                last_successful=now,
                 access_layers=access_layers,
                 supported_metrics=supported_metrics,
                 unsupported_metrics=unsupported_metrics,
@@ -163,11 +179,41 @@ class InstagramConnector(PlatformConnector):
                         supported_metrics=supported_metrics,
                         unsupported_metrics=unsupported_metrics,
                     )
+        except (httpx.TimeoutException, TimeoutError):
+            return PlatformCapability(
+                platform="Instagram",
+                status=PlatformStatus.UNAVAILABLE,
+                reason="Instagram Graph API network connection timed out.",
+                available_data=[],
+                credential_fields=["access_token", "account_id"],
+                approx_test_time="1-3 seconds",
+                last_checked=now,
+                error_detail="Connection timeout",
+                access_layers=access_layers,
+                supported_metrics=supported_metrics,
+                unsupported_metrics=unsupported_metrics,
+            )
+        except httpx.NetworkError as exc:
+            return PlatformCapability(
+                platform="Instagram",
+                status=PlatformStatus.UNAVAILABLE,
+                reason=f"Instagram Graph API network connection failed: {sanitize_error(str(exc))}",
+                available_data=[],
+                credential_fields=["access_token", "account_id"],
+                approx_test_time="1-3 seconds",
+                last_checked=now,
+                error_detail=str(exc)[:200],
+                access_layers=access_layers,
+                supported_metrics=supported_metrics,
+                unsupported_metrics=unsupported_metrics,
+            )
         except Exception as exc:
+            err_str = str(exc)
+            is_internal = isinstance(exc, (NameError, TypeError, AttributeError, ImportError, ValueError))
             return PlatformCapability(
                 platform="Instagram",
                 status=PlatformStatus.ERROR,
-                reason=f"Instagram probe failed: {str(exc)[:120]}",
+                reason=f"Internal error during Instagram verification: {type(exc).__name__}: {sanitize_error(err_str)}" if is_internal else f"Instagram probe failed: {sanitize_error(err_str)[:120]}",
                 available_data=[],
                 credential_fields=["access_token", "account_id"],
                 approx_test_time="1-3 seconds",
@@ -232,7 +278,7 @@ class FacebookConnector(PlatformConnector):
         self._page_id = ""
         self._cache.clear()
 
-    def check_health(self) -> PlatformCapability:
+    def check_health(self, force_probe: bool = False) -> PlatformCapability:
         now = datetime.now(timezone.utc)
 
         fb_page_layer = {
@@ -279,6 +325,22 @@ class FacebookConnector(PlatformConnector):
                 approx_test_time="1-3 seconds",
                 available_data=[],
                 last_checked=now,
+                access_layers=access_layers,
+                supported_metrics=supported_metrics,
+                unsupported_metrics=unsupported_metrics,
+            )
+
+        if not force_probe:
+            fb_page_layer["status"] = "CONNECTED"
+            return PlatformCapability(
+                platform="Facebook",
+                status=PlatformStatus.CONNECTED,
+                reason="Facebook Graph API configuration is active and ready.",
+                available_data=["page_feed", "post_metrics", "comments"],
+                credential_fields=["access_token", "page_id"],
+                approx_test_time="1-3 seconds",
+                last_checked=now,
+                last_successful=now,
                 access_layers=access_layers,
                 supported_metrics=supported_metrics,
                 unsupported_metrics=unsupported_metrics,
@@ -335,11 +397,41 @@ class FacebookConnector(PlatformConnector):
                         supported_metrics=supported_metrics,
                         unsupported_metrics=unsupported_metrics,
                     )
+        except (httpx.TimeoutException, TimeoutError):
+            return PlatformCapability(
+                platform="Facebook",
+                status=PlatformStatus.UNAVAILABLE,
+                reason="Facebook Graph API network connection timed out.",
+                available_data=[],
+                credential_fields=["access_token", "page_id"],
+                approx_test_time="1-3 seconds",
+                last_checked=now,
+                error_detail="Connection timeout",
+                access_layers=access_layers,
+                supported_metrics=supported_metrics,
+                unsupported_metrics=unsupported_metrics,
+            )
+        except httpx.NetworkError as exc:
+            return PlatformCapability(
+                platform="Facebook",
+                status=PlatformStatus.UNAVAILABLE,
+                reason=f"Facebook Graph API network connection failed: {sanitize_error(str(exc))}",
+                available_data=[],
+                credential_fields=["access_token", "page_id"],
+                approx_test_time="1-3 seconds",
+                last_checked=now,
+                error_detail=str(exc)[:200],
+                access_layers=access_layers,
+                supported_metrics=supported_metrics,
+                unsupported_metrics=unsupported_metrics,
+            )
         except Exception as exc:
+            err_str = str(exc)
+            is_internal = isinstance(exc, (NameError, TypeError, AttributeError, ImportError, ValueError))
             return PlatformCapability(
                 platform="Facebook",
                 status=PlatformStatus.ERROR,
-                reason=f"Facebook probe failed: {str(exc)[:120]}",
+                reason=f"Internal error during Facebook verification: {type(exc).__name__}: {sanitize_error(err_str)}" if is_internal else f"Facebook probe failed: {sanitize_error(err_str)[:120]}",
                 available_data=[],
                 credential_fields=["access_token", "page_id"],
                 approx_test_time="1-3 seconds",

@@ -78,11 +78,14 @@ function updatePlatformDot() {
 
 const GENERAL_NAV = [
   { id:'dashboard',      icon:'⊞', label:'Overview' },
-  { id:'trending',       icon:'📈', label:'Trending Topics' },
-  { id:'network',        icon:'🔗', label:'Network Analysis' },
-  { id:'sentiment',      icon:'💬', label:'Sentiment & Emotions' },
-  { id:'audience',       icon:'👥', label:'Audience Demographics' },
+  { id:'analytics',      icon:'📊', label:'Analytics' },
+  { id:'content',        icon:'📄', label:'Content' },
+  { id:'audience',       icon:'👥', label:'Audience / Demographics' },
+  { id:'sentiment',      icon:'💬', label:'Sentiment' },
+  { id:'trending',       icon:'📈', label:'Trending' },
+  { id:'network',        icon:'🔗', label:'Network' },
   { id:'ai',             icon:'✦', label:'AI Insights' },
+  { id:'chat',           icon:'✨', label:'Ask SocialIQ AI' },
   { id:'settings',       icon:'⚙', label:'Settings' },
 ];
 
@@ -90,11 +93,12 @@ const TOPIC_NAV = [
   { id:'dashboard',      icon:'⊞', label:'Dashboard' },
   { id:'analytics',      icon:'📊', label:'Analytics' },
   { id:'content',        icon:'📄', label:'Content' },
-  { id:'audience',       icon:'👥', label:'Audience' },
-  { id:'sentiment',      icon:'💬', label:'Sentiment & Emotions' },
-  { id:'trending',       icon:'📈', label:'Trending Topics' },
-  { id:'network',        icon:'🔗', label:'Network Analysis' },
+  { id:'audience',       icon:'👥', label:'Audience / Demographics' },
+  { id:'sentiment',      icon:'💬', label:'Sentiment' },
+  { id:'trending',       icon:'📈', label:'Trending' },
+  { id:'network',        icon:'🔗', label:'Network' },
   { id:'ai',             icon:'✦', label:'AI Insights' },
+  { id:'chat',           icon:'✨', label:'Ask SocialIQ AI' },
   { id:'settings',       icon:'⚙', label:'Settings' },
 ];
 
@@ -159,6 +163,8 @@ function renderCurrentView() {
       title = 'Network Analysis'; renderNetworkPage(ca, d); break;
     case 'ai':
       title = 'AI Insights'; renderAIPage(ca, d); break;
+    case 'chat':
+      title = 'Ask SocialIQ AI'; renderChatPage(ca, d); break;
     case 'settings':
       title = 'Settings'; renderSettingsPage(ca, d); break;
     case 'profile':
@@ -194,19 +200,11 @@ function selectChartPeriod(p) {
    ================================================================ */
 
 function setupControls() {
-  // Platform selector
+  // Platform selector — instant switching without blocking popups
   $('platformSelect')?.addEventListener('change', e => {
     state.platform = e.target.value;
     updatePlatformDot();
     checkPlatformNotice(state.platform);
-    if (state.platform === 'All Platforms') {
-      showAllPlatformsModal();
-    } else if (state.platform === 'Instagram' || state.platform === 'Facebook' || state.platform === 'Twitter / X') {
-      const cap = state.platformCapabilities ? state.platformCapabilities[state.platform] : null;
-      if (!cap || cap.status === 'unavailable' || cap.status === 'not_configured') {
-        showPlatformCapabilityModal(state.platform);
-      }
-    }
     loadData();
   });
 
@@ -239,15 +237,20 @@ function setupControls() {
     `, true);
   });
 
+  // Ask SocialIQ AI topbar button
+  $('topbarAiBtn')?.addEventListener('click', () => navigateTo('chat'));
+
   // Quick actions
   $('quickActionBtn')?.addEventListener('click', e => {
     openPopover(e.currentTarget, `
       <div class="pop-section">Quick Actions</div>
       <button onclick="loadData();closeAllPopovers();showToast('Refreshing…')">↻ Refresh</button>
+      <button onclick="navigateTo('chat');closeAllPopovers()">✨ Ask SocialIQ AI</button>
       <button onclick="navigateTo('trending');closeAllPopovers()">📈 View Trends</button>
       <button onclick="navigateTo('network');closeAllPopovers()">🔗 Network Graph</button>
       <button onclick="navigateTo('settings');closeAllPopovers()">⚙ API & Credentials</button>
       <button onclick="exportReport();closeAllPopovers()">↓ Export Report</button>
+      <button onclick="openBlockchainModal();closeAllPopovers()">⛓ Blockchain Audit & Integrity</button>
       <div class="pop-divider"></div>
       <button onclick="showModeSelect();closeAllPopovers()">⇄ Switch Mode</button>
     `, true);
@@ -266,12 +269,15 @@ function setupControls() {
   $('searchInput')?.addEventListener('keydown', e => {
     if (e.key === 'Enter') {
       const q = e.target.value.trim();
-      if (q && state.mode === 'topic') {
+      if (q) {
         state.campaign.topic = q;
-        navigateTo('dashboard');
-        loadData();
-      } else if (q) {
-        showToast(`Searching for: "${q}"`);
+        if (state.mode !== 'topic') {
+          showApp('topic');
+        } else {
+          navigateTo('dashboard');
+          loadData();
+        }
+        showToast(`Searching for topic: "${q}"`);
       }
     }
   });
@@ -385,6 +391,7 @@ window.handleSaveAndTest = handleSaveAndTest;
 window.handleClearCredential = handleClearCredential;
 window.selectActivityTimeline = selectActivityTimeline;
 window.renderDynamicActivityComponent = renderDynamicActivityComponent;
+window.openBlockchainModal = () => (window.BlockchainUI && window.BlockchainUI.openModal());
 
 /* ================================================================
    INITIALIZATION
@@ -397,6 +404,16 @@ function init() {
   setupModeSelect();
   setupControls();
   showLogin();
+
+  // Pre-probe backend status non-blocking
+  if (typeof probeBackend === 'function') {
+    probeBackend().catch(() => {});
+  }
+
+  // Initialize blockchain status monitoring
+  if (window.BlockchainUI) {
+    window.BlockchainUI.init();
+  }
 
   // Restore session if user refreshed while in app
   const savedMode = sessionStorage.getItem('socialiq-mode');

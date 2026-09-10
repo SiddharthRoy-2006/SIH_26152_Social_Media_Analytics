@@ -30,6 +30,7 @@ from typing import Any
 from backend.connectors.base import PlatformStatus, SocialRecord
 from backend.connectors.registry import ConnectorRegistry
 from backend.schemas import AnalysisRequest, AnalysisResponse, GeneralRequest, GeneralResponse
+from backend.services.sync_engine import sync_topic_incremental
 
 # ML engines (used for both demo simulation and real-data analysis)
 from ml.demographic_engine import (
@@ -155,11 +156,29 @@ def _compute_real_metrics(records: list[SocialRecord], platform: str = "") -> di
         or r.engagement.get("replies", 0)
         for r in records
     )
-    total_shares = sum(
-        r.engagement.get("shares", 0)
-        or r.engagement.get("forwards", 0)
-        for r in records
-    )
+
+    # Platform-aware share/forward counting
+    # YouTube: shares not in Data API → always 0, shares_supported=False
+    # Telegram: has forwards → use forwards
+    # Reddit: no shares field (upvotes=likes), shares_supported=False
+    # Others: shares may exist
+    plat_lower = platform.lower()
+    if plat_lower == "youtube":
+        total_shares = 0
+        shares_supported = False
+    elif plat_lower == "telegram":
+        total_shares = sum(r.engagement.get("forwards", 0) for r in records)
+        shares_supported = True
+    elif plat_lower == "reddit":
+        total_shares = 0
+        shares_supported = False
+    else:
+        total_shares = sum(
+            r.engagement.get("shares", 0)
+            or r.engagement.get("forwards", 0)
+            for r in records
+        )
+        shares_supported = total_shares > 0
 
     reach = total_views if total_views > 0 else max(total_likes * 10, len(records) * 250)
     total_engagements = total_likes + total_comments + total_shares
@@ -167,18 +186,22 @@ def _compute_real_metrics(records: list[SocialRecord], platform: str = "") -> di
         (total_engagements / max(reach, 1)) * 100, 1
     )
 
+    # Followers/subscribers: YouTube Data API search results do NOT include
+    # subscriber counts. Other platforms similarly restrict this.
+    # Always return null (None → 0 in JSON) and flag as unsupported.
     return {
-        "followers": 0,  # Public search does not expose channel-level follower baseline
+        "followers": 0,       # never fabricated; subscriber counts not in search API responses
         "reach": reach,
         "likes": total_likes,
         "comments": total_comments,
         "shares": total_shares,
         "content_volume": len(records),
         "engagement_rate": engagement_rate,
-        "growth": 0.0,  # Requires longitudinal historical baseline
-        "shares_supported": platform != "YouTube",
-        "followers_supported": False,
+        "growth": 0.0,        # requires longitudinal historical baseline
+        "shares_supported": shares_supported,
+        "followers_supported": False,  # not available via search APIs
     }
+
 
 
 def _compute_real_activity_by_day(records: list[SocialRecord]) -> list[int]:
@@ -396,8 +419,11 @@ def _extract_real_influencers(records: list[SocialRecord]) -> list[dict[str, Any
             "name": name,
             "handle": clean_handle,
             "score": score,
-            "followers": s["views"] if s["views"] > 0 else s["likes"] * 10,
-            "posts": s["post_count"],
+            # Search APIs do not return subscriber/follower counts.
+            # followers=0 signals unavailability; views_count carries actual view data.
+            "followers": 0,
+            "views_count": s["views"],
+                        "posts": s["post_count"],
             "likes": s["likes"],
             "comments": s["comments"],
             "verified": s["views"] > 50000 or s["post_count"] >= 2,
@@ -726,6 +752,11 @@ def _generate_real_ai_insights(
             "icon": "ℹ️",
             "title": "Insufficient Platform Data",
             "text": f"Insufficient live data available from {platform} to compute topic insights.",
+            "insight": f"No live records are currently available for {platform}.",
+            "evidence": "0 records retrieved from connector query.",
+            "reason": f"Platform API returned no matching public records for this period.",
+            "impact": "Topic analytics cannot be calculated until data is retrieved.",
+            "recommendation": "Configure platform API credentials in Settings or test with an active public topic.",
         }]
 
     # 1. Infer topic/entity type from YouTube categories & metadata
@@ -746,6 +777,8 @@ def _generate_real_ai_insights(
     cards: list[dict[str, Any]] = []
 
     # Card 1: Evidence-Based Entity Classification
+    growth_val = float(metrics.get("growth", 0.0))
+    growth_str = f"+{growth_val:.1f}%" if growth_val >= 0 else f"{growth_val:.1f}%"
     cards.append({
         "type": "baseline",
         "severity": "low",
@@ -755,6 +788,11 @@ def _generate_real_ai_insights(
             f"Likely Category: {primary_category}. Analysis of {len(records)} retrieved records on {platform} "
             f"indicates content driven by {top_author} and associated themes ({top_hashtag}).{sample_summary}"
         ),
+        "insight": f"Topic content is driven by {top_author} in category '{primary_category}'.",
+        "evidence": f"Classification of {len(records)} retrieved records from {platform} with key tag {top_hashtag}.",
+        "reason": "Author distribution and channel metadata observed in retrieved search results.",
+        "impact": "Defines contextual targeting boundaries and audience demographics.",
+        "recommendation": f"Tailor campaign narrative to align with '{primary_category}' expectations.",
         "source": f"Data Source: LIVE — {platform} Data API (Verified from {len(records)} records)",
     })
 
@@ -773,6 +811,11 @@ def _generate_real_ai_insights(
             f"Observed {views:,} views and {likes:,} likes across {len(records)} retrieved records, "
             f"yielding a {eng_rate:.1f}% calculated engagement rate ({quality})."
         ),
+        "insight": f"Calculated audience engagement rate is {eng_rate:.1f}% ({quality}).",
+        "evidence": f"{likes:,} likes recorded against {views:,} views across {len(records)} records.",
+        "reason": f"Audience reaction patterns for {topic or 'current ecosystem'} content.",
+        "impact": "Higher engagement density signals algorithmic viability on {platform}.",
+        "recommendation": "Replicate creative elements of top-performing items to increase interaction.",
         "source": f"Derived from {len(records)} retrieved {platform} items",
     })
 
@@ -791,6 +834,11 @@ def _generate_real_ai_insights(
             f"Text analysis of retrieved video titles, descriptions, and comments indicates {mood} sentiment "
             f"({pos}% positive, {neg}% negative, {neu}% neutral)."
         ),
+        "insight": f"Audience sentiment is {mood} ({pos}% positive vs {neg}% negative).",
+        "evidence": f"NLP text classification across retrieved content: {pos}% pos, {neg}% neg, {neu}% neu.",
+        "reason": "Direct text analysis of retrieved titles, captions, and comments.",
+        "impact": "Guides brand reputation management and community engagement tone.",
+        "recommendation": "Address critical questions raised in comments" if neg >= 35 else "Amplify positive testimonial narratives in forthcoming posts.",
         "source": "Heuristic NLP classification on retrieved text",
     })
 
@@ -804,6 +852,11 @@ def _generate_real_ai_insights(
             f"Top active hashtags and keywords observed in data: {', '.join(t['keyword'] for t in top_trends[:4]) or '#Trending'}. "
             f"Lead creator {top_author} accounts for highest volume of interactions."
         ),
+        "insight": f"Conversational catalyst '{top_hashtag}' leads narrative spread.",
+        "evidence": f"Co-occurrence frequency across {len(records)} records with influencer {top_author}.",
+        "reason": "Authoritative accounts leading public discussion volume.",
+        "impact": "Functions as the main discovery channel for new participants.",
+        "recommendation": f"Incorporate '{top_hashtag}' in topic distribution strategy.",
         "source": f"Observed in retrieved records from {platform}",
     })
 
@@ -833,50 +886,91 @@ class LiveAnalysisProvider:
 
         try:
             loop = asyncio.new_event_loop()
-            records = loop.run_until_complete(self._collect(request))
+            records, source = loop.run_until_complete(self._collect(request))
             loop.close()
         except Exception as exc:
             logger.error("Live analysis collection failed: %s", exc)
             records = []
+            source = "empty"
 
         if not records:
             return self._empty_response(request)
 
-        return self._build_response(request, records)
+        return self._build_response(request, records, source=source)
 
-    async def _collect(self, request: AnalysisRequest) -> list[SocialRecord]:
-        """Collect real records from the relevant platform connector(s)."""
+    async def _collect(self, request: AnalysisRequest) -> tuple[list[SocialRecord], str]:
+        """Collect records via incremental sync from database and connectors."""
         topic = request.topic.strip()
-        period_days = _PERIOD_DAYS.get(request.period, 30)
         all_records: list[SocialRecord] = []
+        sources: set[str] = set()
 
         if request.platform == "All Platforms":
             platforms = self._registry.connected_platforms()
+            # If no platforms configured/connected, check stored database records
+            if not platforms:
+                from backend.database.repository import get_records
+                from backend.services.sync_engine import get_period_bounds
+                req_start, req_end = get_period_bounds(request.period)
+                stored = get_records(
+                    platform="All Platforms",
+                    topic=topic,
+                    start_time=req_start,
+                    end_time=req_end,
+                )
+                return stored, ("database" if stored else "empty")
         else:
             platforms = [request.platform]
 
-        for platform in platforms:
-            connector = self._registry.get_connector(platform)
-            if connector is None:
-                continue
-            cap = self._registry.get_capability(platform)
-            if cap.status not in (PlatformStatus.CONNECTED, PlatformStatus.LIMITED):
-                continue
-            try:
-                records = await connector.search(topic, limit=20, period_days=period_days)
-                all_records.extend(records)
+        sem = asyncio.Semaphore(3)
 
-                # Also fetch comments for the top 3 videos (for sentiment richness)
-                for r in records[:3]:
-                    comments = await connector.fetch_comments(r.content_id, limit=30)
-                    all_records.extend(comments)
-            except Exception as exc:
-                logger.warning("Connector %s failed for topic %r: %s", platform, topic, exc)
+        async def _sync_single(plat: str) -> tuple[list[SocialRecord], str]:
+            async with sem:
+                conn = self._registry.get_connector(plat)
+                try:
+                    p_records, p_source, _ = await asyncio.wait_for(
+                        sync_topic_incremental(
+                            platform=plat,
+                            topic=topic,
+                            period=request.period,
+                            connector=conn,
+                        ),
+                        timeout=8.0,
+                    )
+                    return p_records, p_source
+                except Exception as exc:
+                    logger.warning("Parallel sync for %s failed: %s", plat, exc)
+                    return [], "empty"
 
-        return all_records
+        results = await asyncio.gather(*[_sync_single(p) for p in platforms], return_exceptions=False)
+        for p_records, p_source in results:
+            if p_records:
+                all_records.extend(p_records)
+                sources.add(p_source)
+
+        # Merge duplicates across platforms if any
+        seen_ids: set[tuple[str, str]] = set()
+        deduped_records: list[SocialRecord] = []
+        for r in all_records:
+            key = (r.platform, r.content_id)
+            if key not in seen_ids:
+                seen_ids.add(key)
+                deduped_records.append(r)
+
+        if "live" in sources and "database" in sources:
+            overall_source = "mixed"
+        elif "live" in sources:
+            overall_source = "live"
+        elif "database" in sources:
+            overall_source = "database"
+        elif "mixed" in sources:
+            overall_source = "mixed"
+        else:
+            overall_source = "empty"
+
+        return deduped_records, overall_source
 
     def _build_response(
-        self, request: AnalysisRequest, records: list[SocialRecord]
+        self, request: AnalysisRequest, records: list[SocialRecord], source: str = "live"
     ) -> AnalysisResponse:
         topic = request.topic.strip()
         seed = _make_seed_from_records(records, topic)
@@ -934,6 +1028,17 @@ class LiveAnalysisProvider:
 
         keyword = f"#{''.join(topic.split())[:18]}"
 
+        from backend.services.ai_model_manager import generate_evidence_summary
+        ai_summary = generate_evidence_summary(
+            platform=request.platform,
+            topic=topic,
+            period=request.period,
+            metrics=metrics,
+            sentiment=sentiment,
+            top_trends=top_trends,
+            source=source,
+        )
+
         return AnalysisResponse(
             platform=request.platform,
             topic=topic,
@@ -941,7 +1046,7 @@ class LiveAnalysisProvider:
             period=request.period,
             chart_period=request.chart_period,
             data_available=True,
-            source="live",
+            source=source,
             refresh_tick=tick,
             mode="topic",
             metrics=metrics,
@@ -963,6 +1068,7 @@ class LiveAnalysisProvider:
             growth_series=growth_series,
             insights=insights_dict,
             ai_insights=ai_insights,
+            ai_summary=ai_summary,
             sentiment_series=sentiment_series,
             top_trends=top_trends,
             influencers=influencers,
@@ -1003,21 +1109,23 @@ class LiveGeneralProvider:
         """Synchronous wrapper — runs the async pipeline in a new event loop."""
         try:
             loop = asyncio.new_event_loop()
-            records = loop.run_until_complete(self._collect(request))
+            records, source = loop.run_until_complete(self._collect(request))
             loop.close()
         except Exception as exc:
             logger.error("Live general collection failed: %s", exc)
             records = []
+            source = "empty"
 
         if not records:
             return self._empty_response(request)
 
-        return self._build_response(request, records)
+        return self._build_response(request, records, source=source)
 
-    async def _collect(self, request: GeneralRequest) -> list[SocialRecord]:
-        """Collect general/trending records from connected platforms."""
+    async def _collect(self, request: GeneralRequest) -> tuple[list[SocialRecord], str]:
+        """Collect general/trending records from connected platforms and PostgreSQL."""
         period_days = _PERIOD_DAYS.get(request.period, 30)
         all_records: list[SocialRecord] = []
+        new_records: list[SocialRecord] = []
 
         general_queries = ["trending", "viral", "news today"]
 
@@ -1026,24 +1134,70 @@ class LiveGeneralProvider:
         else:
             platforms = [request.platform]
 
-        for platform in platforms:
-            connector = self._registry.get_connector(platform)
-            if connector is None:
-                continue
-            cap = self._registry.get_capability(platform)
-            if cap.status not in (PlatformStatus.CONNECTED, PlatformStatus.LIMITED):
-                continue
-            try:
-                for query in general_queries[:1]:  # Limit to 1 query to conserve quota
-                    records = await connector.search(query, limit=12, period_days=period_days)
-                    all_records.extend(records)
-            except Exception as exc:
-                logger.warning("Connector %s failed for general: %s", platform, exc)
+        from backend.database.repository import get_records, save_social_records
+        from backend.services.sync_engine import get_period_bounds
+        req_start, req_end = get_period_bounds(request.period)
+        stored_records = get_records(
+            platform=request.platform,
+            topic="general",
+            start_time=req_start,
+            end_time=req_end,
+        )
 
-        return all_records
+        sem = asyncio.Semaphore(3)
+
+        async def _fetch_general(plat: str) -> list[SocialRecord]:
+            async with sem:
+                connector = self._registry.get_connector(plat)
+                if connector is None:
+                    return []
+                cap = self._registry.get_capability(plat)
+                if cap.status not in (PlatformStatus.CONNECTED, PlatformStatus.LIMITED):
+                    return []
+                try:
+                    return await asyncio.wait_for(
+                        connector.search(general_queries[0], limit=12, period_days=period_days),
+                        timeout=8.0,
+                    )
+                except Exception as exc:
+                    logger.warning("Connector %s failed for general: %s", plat, exc)
+                    return []
+
+        plat_results = await asyncio.gather(*[_fetch_general(p) for p in platforms], return_exceptions=False)
+        for r_list in plat_results:
+            if r_list:
+                new_records.extend(r_list)
+
+        if new_records:
+            save_social_records(new_records, topic="general", is_demo=False)
+
+        # Merge deduplicated
+        seen = set()
+        merged: list[SocialRecord] = []
+        for r in new_records:
+            k = (r.platform, r.content_id)
+            if k not in seen:
+                seen.add(k)
+                merged.append(r)
+        for r in stored_records:
+            k = (r.platform, r.content_id)
+            if k not in seen:
+                seen.add(k)
+                merged.append(r)
+
+        if stored_records and new_records:
+            source = "mixed"
+        elif new_records:
+            source = "live"
+        elif stored_records:
+            source = "database"
+        else:
+            source = "empty"
+
+        return merged, source
 
     def _build_response(
-        self, request: GeneralRequest, records: list[SocialRecord]
+        self, request: GeneralRequest, records: list[SocialRecord], source: str = "live"
     ) -> GeneralResponse:
         seed = _make_seed_from_records(records, "GENERAL")
         tick = request.refresh_tick
@@ -1089,11 +1243,22 @@ class LiveGeneralProvider:
         age35_44 = 22
         age45 = 21
 
+        from backend.services.ai_model_manager import generate_evidence_summary
+        ai_summary = generate_evidence_summary(
+            platform=request.platform,
+            topic="",
+            period=request.period,
+            metrics=metrics,
+            sentiment=sentiment,
+            top_trends=top_trends,
+            source=source,
+        )
+
         return GeneralResponse(
             platform=request.platform,
             topic="", query="",
             period=request.period, chart_period=request.chart_period,
-            data_available=True, source="live",
+            data_available=True, source=source,
             refresh_tick=tick, mode="general",
             metrics=metrics,
             audience={"age18_24": age18_24, "age25_34": age25_34, "age35_44": age35_44, "age45": age45},
@@ -1114,6 +1279,7 @@ class LiveGeneralProvider:
             growth_series=growth_series,
             insights=insights_dict,
             ai_insights=ai_insights,
+            ai_summary=ai_summary,
             sentiment_series=sentiment_series,
             top_trends=top_trends,
             influencers=influencers,

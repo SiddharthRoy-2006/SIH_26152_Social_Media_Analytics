@@ -151,6 +151,7 @@
           <span class="search-icon">⌕</span>
           <input id="searchInput" type="search" placeholder="Search analytics…" autocomplete="off">
         </div>
+        <button class="icon-btn" id="topbarAiBtn" title="SocialIQ AI Assistant" type="button" aria-label="SocialIQ AI Assistant" style="color:var(--purple);font-weight:bold">✨</button>
         <button class="icon-btn" id="quickActionBtn" title="Quick actions" type="button" aria-label="Quick actions">✦</button>
         <button class="icon-btn" id="refreshBtn" title="Refresh" type="button" aria-label="Refresh">↻</button>
         <button class="icon-btn" id="notifBtn" title="Notifications" type="button" aria-label="Notifications">
@@ -180,6 +181,10 @@
           <span class="status-dot pulse"></span>
           <span id="statusText">Connecting…</span>
         </div>
+        <button class="blockchain-status-btn" id="blockchainStatusBtn" type="button" title="Blockchain Audit & Integrity Layer" onclick="openBlockchainModal()">
+          <span class="blockchain-dot ready" id="blockchainDot"></span>
+          <span id="blockchainStatusText">Blockchain: Ready</span>
+        </button>
         <button class="ctrl-btn" id="dateFilterBtn" type="button">
           <span>◷</span>
           <span id="dateFilterLabel">Last 30 Days</span>
@@ -225,6 +230,8 @@
 <script src="js/dashboard.js"></script>
 <script src="js/topic-analysis.js"></script>
 <script src="js/credentials.js"></script>
+<script src="js/blockchain.js"></script>
+<script src="js/chat.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

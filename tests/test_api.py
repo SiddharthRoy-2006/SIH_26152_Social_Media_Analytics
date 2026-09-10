@@ -245,3 +245,41 @@ def test_general_explicit_demo_parameter():
     assert len(payload["top_trends"]) == 10
 
 
+# ---------------------------------------------------------------------------
+# AI Chatbot Endpoints Tests
+# ---------------------------------------------------------------------------
+
+def test_chat_status_endpoint():
+    """Verify GET /api/chat/status returns local Qwen3-4B and RoBERTa configuration."""
+    response = client.get("/api/chat/status")
+    assert response.status_code == 200
+    data = response.json()
+    assert "primary_llm" in data
+    assert data["primary_llm"]["model"] == "Qwen3-4B"
+    assert "Q4_K_M" in data["primary_llm"]["quantization"]
+    assert "emotion_model" in data
+    assert data["grounded_facts_first"] is True
+
+
+def test_chat_message_explain_metric():
+    """Verify POST /api/chat/message provides grounded metric definitions via controlled tool."""
+    response = client.post("/api/chat/message", json={
+        "message": "What is engagement rate?",
+        "platform": "All Platforms",
+        "period": "Last 30 Days"
+    })
+    assert response.status_code == 200
+    data = response.json()
+    assert data["grounded"] is True
+    assert data["tool_used"] == "explain_metric"
+    assert "Engagement Rate" in data["answer"]
+    assert len(data["sources"]) > 0
+
+
+def test_chat_message_validation():
+    """Verify POST /api/chat/message rejects empty message with 422."""
+    response = client.post("/api/chat/message", json={"message": ""})
+    assert response.status_code == 422
+
+
+

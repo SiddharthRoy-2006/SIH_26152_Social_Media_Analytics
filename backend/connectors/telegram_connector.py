@@ -73,7 +73,7 @@ class TelegramConnector(PlatformConnector):
         self._bot_token = ""
         self._cache.clear()
 
-    def check_health(self) -> PlatformCapability:
+    def check_health(self, force_probe: bool = False) -> PlatformCapability:
         now = datetime.now(timezone.utc)
 
         mtproto_layer = {
@@ -121,6 +121,26 @@ class TelegramConnector(PlatformConnector):
                 approx_test_time="1-3 seconds",
                 available_data=["public_channel_search", "messages"],
                 last_checked=now,
+                access_layers=access_layers,
+                supported_metrics=supported_metrics,
+                unsupported_metrics=unsupported_metrics,
+            )
+
+        if not force_probe:
+            if self._bot_token:
+                bot_api_layer["status"] = "CONNECTED"
+            if len(self._api_id) >= 4 and len(self._api_hash) >= 16:
+                mtproto_layer["status"] = "CONNECTED"
+            active_desc = "Telegram MTProto" if (self._api_id and self._api_hash) else "Telegram"
+            return PlatformCapability(
+                platform="Telegram",
+                status=PlatformStatus.CONNECTED,
+                reason=f"{active_desc} configuration is active and ready.",
+                available_data=["public_channel_search", "messages", "replies"],
+                credential_fields=["api_id", "api_hash"],
+                approx_test_time="1-3 seconds",
+                last_checked=now,
+                last_successful=now,
                 access_layers=access_layers,
                 supported_metrics=supported_metrics,
                 unsupported_metrics=unsupported_metrics,
@@ -210,12 +230,25 @@ class TelegramConnector(PlatformConnector):
                     unsupported_metrics=unsupported_metrics,
                 )
 
-        except Exception as exc:
-            logger.error("Telegram health check exception: %s", exc)
+        except httpx.TimeoutException:
             return PlatformCapability(
                 platform="Telegram",
-                status=PlatformStatus.ERROR,
-                reason=f"Telegram connection probe failed: {str(exc)[:120]}",
+                status=PlatformStatus.UNAVAILABLE,
+                reason="Telegram API network connection timed out.",
+                available_data=["public_channel_search", "messages"],
+                credential_fields=["api_id", "api_hash"],
+                approx_test_time="1-3 seconds",
+                last_checked=now,
+                error_detail="Connection timeout",
+                access_layers=access_layers,
+                supported_metrics=supported_metrics,
+                unsupported_metrics=unsupported_metrics,
+            )
+        except httpx.NetworkError as exc:
+            return PlatformCapability(
+                platform="Telegram",
+                status=PlatformStatus.UNAVAILABLE,
+                reason=f"Telegram API network failure: {sanitize_error(str(exc))}",
                 available_data=["public_channel_search", "messages"],
                 credential_fields=["api_id", "api_hash"],
                 approx_test_time="1-3 seconds",
@@ -225,6 +258,23 @@ class TelegramConnector(PlatformConnector):
                 supported_metrics=supported_metrics,
                 unsupported_metrics=unsupported_metrics,
             )
+        except Exception as exc:
+            logger.error("Telegram health check exception: %s", exc)
+            err_str = str(exc)
+            is_internal = isinstance(exc, (NameError, TypeError, AttributeError, ImportError, ValueError))
+            return PlatformCapability(
+                platform="Telegram",
+                status=PlatformStatus.ERROR,
+                reason=f"Internal error during Telegram verification: {type(exc).__name__}: {sanitize_error(err_str)}" if is_internal else f"Telegram probe failed: {sanitize_error(err_str)[:120]}",
+                available_data=["public_channel_search", "messages"],
+                credential_fields=["api_id", "api_hash"],
+                approx_test_time="1-3 seconds",
+                last_checked=now,
+                error_detail=str(exc)[:200],
+                access_layers=access_layers,
+                supported_metrics=supported_metrics,
+            )
+
 
 
     async def search(

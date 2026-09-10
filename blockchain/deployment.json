@@ -1,0 +1,9 @@
+{
+  "contract_address": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+  "deployer_address": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+  "transaction_hash": "28b1bdb02cb181766fac4a6b5e5bf9fc2e82982450cd8e9298fa36db816fe0f9",
+  "block_number": 1,
+  "chain_id": 31337,
+  "rpc_url": "http://127.0.0.1:8545",
+  "network_name": "Local EVM (Hardhat Node)"
+}

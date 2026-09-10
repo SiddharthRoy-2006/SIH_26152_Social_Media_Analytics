@@ -10,4 +10,9 @@ env/
 *.pem
 .vscode/
 *.log
+.claude/
+agent/
+data/
+blockchain/node_modules/
+blockchain/cache/
 

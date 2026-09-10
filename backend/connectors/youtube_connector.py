@@ -54,16 +54,29 @@ class YouTubeConnector(PlatformConnector):
 
     def update_credentials(self, credentials: dict[str, str]) -> None:
         if "api_key" in credentials:
-            self._api_key = credentials["api_key"].strip()
-            self._service = None
-            self._cache.clear()
+            new_key = credentials["api_key"].strip()
+            if new_key != self._api_key:
+                self._api_key = new_key
+                self._service = None  # invalidate stale service
+                self._cache.clear()
+                # Pre-warm the API service object so the first search call
+                # never races against a None service build.
+                try:
+                    if self._api_key:
+                        self._get_service()
+                        logger.info("YouTube API service pre-warmed after credential update.")
+                except Exception as exc:
+                    # Non-fatal: service will be re-built on first search
+                    logger.warning("YouTube service pre-warm failed: %s", exc)
+                    self._service = None
+
 
     def clear_credentials(self) -> None:
         self._api_key = ""
         self._service = None
         self._cache.clear()
 
-    def check_health(self) -> PlatformCapability:
+    def check_health(self, force_probe: bool = False) -> PlatformCapability:
         now = datetime.now(timezone.utc)
 
         data_api_layer = {
@@ -74,13 +87,17 @@ class YouTubeConnector(PlatformConnector):
             "auth_required": False,
             "status": "CONNECTED" if self._api_key else "NOT_CONFIGURED",
         }
+        from backend.services.oauth_service import get_oauth_service
+        oauth_status = get_oauth_service().get_safe_status("YouTube")
+        oauth_state = oauth_status.get("status", "NOT_CONNECTED")
+
         analytics_api_layer = {
             "name": "YouTube Analytics API",
             "access_type": "Google OAuth 2.0",
             "usage": "Channel owner audience retention, viewer demographics, and estimated watch time.",
             "provides": ["Viewer demographics", "Audience retention", "Geographic watch time"],
             "auth_required": True,
-            "status": "NOT_CONNECTED",
+            "status": oauth_state,
         }
         reporting_api_layer = {
             "name": "YouTube Reporting API",
@@ -88,7 +105,7 @@ class YouTubeConnector(PlatformConnector):
             "usage": "Bulk scheduled historical channel reporting datasets.",
             "provides": ["Scheduled bulk reporting jobs", "Historical daily aggregated stats"],
             "auth_required": True,
-            "status": "NOT_CONNECTED",
+            "status": "NOT_CONFIGURED" if oauth_state == "CONFIGURATION_REQUIRED" else "NOT_CONNECTED",
         }
 
         access_layers = [data_api_layer, analytics_api_layer, reporting_api_layer]
@@ -103,6 +120,22 @@ class YouTubeConnector(PlatformConnector):
                 credential_fields=["api_key"],
                 approx_test_time="1-3 seconds",
                 last_checked=now,
+                access_layers=access_layers,
+                supported_metrics=supported_metrics,
+                unsupported_metrics=unsupported_metrics,
+            )
+
+        if not force_probe:
+            data_api_layer["status"] = "CONNECTED"
+            return PlatformCapability(
+                platform="YouTube",
+                status=PlatformStatus.CONNECTED,
+                reason="YouTube Data API v3 API Key is configured and ready.",
+                available_data=["search", "video_details", "comments"],
+                credential_fields=["api_key"],
+                approx_test_time="1-3 seconds",
+                last_checked=now,
+                last_successful=now,
                 access_layers=access_layers,
                 supported_metrics=supported_metrics,
                 unsupported_metrics=unsupported_metrics,
@@ -127,18 +160,56 @@ class YouTubeConnector(PlatformConnector):
                 unsupported_metrics=unsupported_metrics,
             )
         except Exception as exc:
-            error_msg = sanitize_error(str(exc)) or str(exc)
-            status = PlatformStatus.ERROR
-            reason = "YouTube API key is invalid or request failed."
+            error_raw = str(exc)
+            error_msg = sanitize_error(error_raw) or error_raw
+            error_lower = error_raw.lower()
 
-            if "quota" in error_msg.lower() or "rateLimitExceeded" in error_msg:
+            status = PlatformStatus.ERROR
+            reason = "YouTube API key verification failed."
+
+            # 1. Quota / Rate limit
+            if "quota" in error_lower or "ratelimitexceeded" in error_lower or "dailylimitexceeded" in error_lower:
                 status = PlatformStatus.RATE_LIMITED
                 reason = "YouTube daily quota has been exceeded. Resets at midnight PT."
                 data_api_layer["status"] = "QUOTA_LIMITED"
-            elif "forbidden" in error_msg.lower() or "accessNotConfigured" in error_msg or "keyInvalid" in error_msg or "API key not valid" in error_msg:
+
+            # 2. Invalid Credential (400 bad key, API key not valid, keyInvalid)
+            elif "keyinvalid" in error_lower or "api key not valid" in error_lower or ("badrequest" in error_lower and "key" in error_lower):
                 status = PlatformStatus.ERROR
-                reason = "YouTube API key is invalid or YouTube Data API v3 is not enabled."
+                reason = "YouTube API key is invalid or unrecognized."
                 data_api_layer["status"] = "INVALID_CREDENTIAL"
+
+            # 3. Permission / Scope / API not enabled (accessNotConfigured)
+            elif "accessnotconfigured" in error_lower or "has not been used in project" in error_lower or ("forbidden" in error_lower and "not enabled" in error_lower):
+                status = PlatformStatus.ERROR
+                reason = "YouTube Data API v3 is not enabled in your Google Cloud Console project."
+                data_api_layer["status"] = "PERMISSION_REQUIRED"
+
+            elif "forbidden" in error_lower:
+                status = PlatformStatus.ERROR
+                reason = "YouTube API access forbidden. Verify key permissions or IP/referrer restrictions."
+                data_api_layer["status"] = "INVALID_CREDENTIAL"
+
+            # 4. Network / Connection / Timeout errors
+            elif any(net_term in error_lower for net_term in [
+                "timed out", "timeout", "connection refused", "connection error",
+                "network unreachable", "servernotfound", "getaddrinfo failed",
+                "remotedisconnected", "name or service not known"
+            ]):
+                status = PlatformStatus.UNAVAILABLE
+                reason = "Network connection to YouTube API failed or timed out."
+                data_api_layer["status"] = "NETWORK_ERROR"
+
+            # 5. Internal Python / runtime errors (never label as INVALID_CREDENTIAL)
+            elif isinstance(exc, (NameError, TypeError, AttributeError, ImportError, SyntaxError, ValueError)):
+                status = PlatformStatus.ERROR
+                reason = f"Internal system error during YouTube verification: {type(exc).__name__}: {error_msg}"
+                data_api_layer["status"] = "INTERNAL_ERROR"
+
+            else:
+                status = PlatformStatus.ERROR
+                reason = f"YouTube API probe failed: {error_msg}"
+                data_api_layer["status"] = "PROBE_FAILED"
 
             return PlatformCapability(
                 platform="YouTube",

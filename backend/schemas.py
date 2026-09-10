@@ -52,7 +52,7 @@ class AnalysisResponse(BaseModel):
     period: str
     chart_period: str
     data_available: bool
-    source: Literal["empty", "demo", "live", "mixed", "provider"]
+    source: Literal["empty", "demo", "live", "mixed", "database", "provider"]
     metrics: dict
     audience: dict
     sentiment: dict
@@ -63,9 +63,11 @@ class AnalysisResponse(BaseModel):
     growth_series: list[int]
     insights: dict
 
-    # --- extended fields (all optional with safe defaults) ------------------
-    # Structured AI insight cards [{type, icon, severity, title, text}]
+    # Structured AI insight cards [{type, icon, severity, title, text, insight, evidence, reason, impact, recommendation}]
     ai_insights: list[dict[str, Any]] = Field(default_factory=list)
+
+    # 4-part AI Summary {what_happened, why_it_matters, evidence, next_steps, overall_text}
+    ai_summary: dict[str, str] = Field(default_factory=dict)
 
     # Sentiment over time (index 0 = oldest)
     sentiment_series: list[int] = Field(default_factory=list)
@@ -110,6 +112,9 @@ class HealthResponse(BaseModel):
     data_mode: str
     version: str
     platforms: dict[str, Any] = Field(default_factory=dict)
+    database: dict[str, Any] = Field(default_factory=dict)
+    storage: dict[str, Any] = Field(default_factory=dict)
+    blockchain: dict[str, Any] = Field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -151,5 +156,27 @@ class CredentialStatusResponse(BaseModel):
 
 class AllCredentialsStatusResponse(BaseModel):
     platforms: dict[str, CredentialStatusResponse] = Field(default_factory=dict)
+
+
+# ---------------------------------------------------------------------------
+# AI Chatbox Models
+# ---------------------------------------------------------------------------
+
+class ChatRequest(BaseModel):
+    message: str = Field(..., min_length=1, max_length=1000)
+    platform: str = "All Platforms"
+    topic: str = ""
+    period: str = "Last 30 Days"
+    chart_period: str = "Monthly"
+    mode: str = "general"
+
+
+class ChatResponse(BaseModel):
+    answer: str
+    tool_used: str | None = None
+    grounded: bool = True
+    data_context: dict[str, Any] = Field(default_factory=dict)
+    sources: list[str] = Field(default_factory=list)
+
 
 

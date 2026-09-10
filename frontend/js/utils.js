@@ -278,6 +278,7 @@ function normalizePayload(source) {
 
     /* Extended */
     aiInsights:     Array.isArray(source.ai_insights)    ? source.ai_insights    : [],
+    aiSummary:      (source.ai_summary && typeof source.ai_summary === 'object') ? source.ai_summary : {},
     sentSeries:     Array.isArray(source.sentiment_series) ? source.sentiment_series : [],
     topTrends:      Array.isArray(source.top_trends)     ? source.top_trends     : [],
     influencers:    Array.isArray(source.influencers)    ? source.influencers    : [],
@@ -468,6 +469,8 @@ function renderDynamicActivityComponent(container, d, timeline) {
   state.activityTimeline = currentTimeline;
 
   const isLive = d?.source === 'live';
+  const isDatabase = d?.source === 'database';
+  const isMixed = d?.source === 'mixed';
   const isDemo = d?.source === 'demo';
   const isAvailable = !!d?.dataAvailable;
 
@@ -555,7 +558,11 @@ function renderDynamicActivityComponent(container, d, timeline) {
   const max = Math.max(...dataValues, 1);
   const containerId = container.id || '';
 
-  const sourceBadgeHTML = isLive
+  const sourceBadgeHTML = isMixed
+    ? `<span style="font-size:10px;font-weight:700;color:var(--primary);background:rgba(99,102,241,0.1);padding:2px 6px;border-radius:4px;margin-left:6px;">DATABASE + LIVE</span>`
+    : isDatabase
+    ? `<span style="font-size:10px;font-weight:700;color:var(--cyan, #06b6d4);background:rgba(6,182,212,0.1);padding:2px 6px;border-radius:4px;margin-left:6px;">DATABASE</span>`
+    : isLive
     ? `<span style="font-size:10px;font-weight:700;color:var(--success);background:rgba(16,185,129,0.1);padding:2px 6px;border-radius:4px;margin-left:6px;">LIVE DATA</span>`
     : isDemo
     ? `<span style="font-size:10px;font-weight:700;color:var(--warning);background:rgba(245,158,11,0.1);padding:2px 6px;border-radius:4px;margin-left:6px;">DEMO DATA</span>`

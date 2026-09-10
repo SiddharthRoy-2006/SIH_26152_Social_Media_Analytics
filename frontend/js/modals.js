@@ -50,17 +50,33 @@ function showCredentialResultModal(platform, result, isSuccess) {
       categoryLabel = 'PERMISSION / API ACCESS REQUIRED';
       title = `${platform} — Permission / Scope Required`;
       sub = 'Credential valid, but required API or scope is not enabled for this project.';
-    } else if (detailLower.includes('network') || detailLower.includes('timeout') || result.status === 'network_error') {
-      categoryLabel = 'NETWORK / TIMEOUT ERROR';
-      title = `${platform} — Network Connection Timeout`;
+    } else if (result.status === 'error' || detailLower.includes('internal error') || detailLower.includes('traceback') || detailLower.includes('exception') || detailLower.includes('nameerror') || detailLower.includes('typeerror')) {
+      categoryLabel = 'INTERNAL ERROR';
+      iconClass = 'error';
+      iconEmoji = '⚠️';
+      title = `${platform} — Backend Internal Error`;
+      sub = 'An internal application error occurred during verification. Check backend logs.';
+    } else if (result.status === 'unavailable' || result.status === 'network_error' || detailLower.includes('network') || detailLower.includes('timeout') || detailLower.includes('unavailable') || detailLower.includes('connection error')) {
+      categoryLabel = 'UNAVAILABLE / NETWORK FAILURE';
+      iconClass = 'warning';
+      iconEmoji = '🔌';
+      title = `${platform} — Platform Gateway Unavailable`;
       sub = 'Could not establish connection to the platform gateway endpoints.';
-    } else if (result.status === 'not_configured') {
-      categoryLabel = 'NOT CONFIGURED';
+    } else if (result.status === 'not_configured' || detailLower.includes('not configured') || detailLower.includes('missing credential')) {
+      categoryLabel = 'CONFIGURATION MISSING';
+      iconClass = 'warning';
+      iconEmoji = 'ℹ️';
       title = `${platform} — Missing Credentials`;
       sub = 'Please enter all required credentials for this platform.';
-    } else {
+    } else if (result.status === 'invalid' || detailLower.includes('invalid') || detailLower.includes('unauthorized') || detailLower.includes('unrecognized') || detailLower.includes('bad request')) {
       categoryLabel = 'INVALID CREDENTIAL';
-      title = `${platform} — Credential Verification Notice`;
+      title = `${platform} — Invalid Credential`;
+      sub = 'The credential was rejected by the authentication gateway.';
+    } else {
+      categoryLabel = 'VERIFICATION NOTICE';
+      iconClass = 'warning';
+      iconEmoji = 'ℹ️';
+      title = `${platform} — Verification Notice`;
       sub = 'Diagnostic response from platform authentication gateway.';
     }
   }
@@ -106,7 +122,12 @@ function showCredentialResultModal(platform, result, isSuccess) {
   const closeFn = () => {
     modalBackdrop.remove();
     root.style.pointerEvents = 'none';
+    document.removeEventListener('keydown', _escHandler);
   };
+
+  // Escape key closes the modal
+  const _escHandler = (e) => { if (e.key === 'Escape') closeFn(); };
+  document.addEventListener('keydown', _escHandler);
 
   modalBackdrop.querySelector('#credResultCloseBtn')?.addEventListener('click', closeFn);
 
@@ -118,6 +139,9 @@ function showCredentialResultModal(platform, result, isSuccess) {
     if (state.demoOverrides) {
       state.demoOverrides[platform] = false;
     }
+    if (state.platformDemo) {
+      delete state.platformDemo[platform];
+    }
     state.dataSource = 'live';
 
     // Switch active platform
@@ -126,14 +150,15 @@ function showCredentialResultModal(platform, result, isSuccess) {
     if (select) select.value = platform;
     if (typeof updatePlatformDot === 'function') updatePlatformDot();
 
-    // Show loading state
-    updateStatusBadge('connecting');
+    // Show fetching state (credentials are verified — not connecting from scratch)
+    updateStatusBadge('fetching');
     await loadData();
 
-    // Small 2-second confirmation notification
-    showToast(`🟢 LIVE DATA CONNECTED — ${platform}`, 2000);
+    // 4-second confirmation notification — long enough to read
+    showToast(`🟢 LIVE DATA CONNECTED — ${platform}`, 4000);
   });
 }
+
 
 /* ================================================================
    2. "WHAT DO I NEED?" INFORMATION TOOL
@@ -346,9 +371,30 @@ function showOAuthInfoModal(platform, layerName, scopes, info) {
 
   modalBackdrop.querySelector('#oauthModalCloseBtn')?.addEventListener('click', closeFn);
   modalBackdrop.querySelector('#oauthModalCloseBtn2')?.addEventListener('click', closeFn);
-  modalBackdrop.querySelector('#oauthModalProceedBtn')?.addEventListener('click', () => {
+  modalBackdrop.querySelector('#oauthModalProceedBtn')?.addEventListener('click', async () => {
     closeFn();
-    showToast(`Initiating OAuth 2.0 handshake for ${platform} ${layerName}…`);
+    const apiBase = window.API_BASE || 'http://127.0.0.1:8001';
+    if (platform === 'YouTube') {
+      showToast(`Contacting SocialIQ OAuth gateway for YouTube…`, 2500);
+      try {
+        const resp = await fetch(`${apiBase}/api/auth/youtube/authorize`);
+        const data = await resp.json();
+        if (resp.status === 400 && data.status === 'CONFIGURATION_REQUIRED') {
+          showToast(`Configuration Required: Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in backend .env`, 6000);
+          return;
+        }
+        if (data.authorization_url) {
+          showToast(`Opening Google OAuth consent screen…`, 3000);
+          window.open(data.authorization_url, '_blank', 'width=600,height=700');
+          return;
+        }
+        showToast(data.message || 'OAuth handshake failed', 4000);
+      } catch (err) {
+        showToast(`OAuth connection error: ${err.message}`, 4000);
+      }
+    } else {
+      showToast(`Initiating OAuth 2.0 handshake for ${platform} ${layerName}…`);
+    }
   });
 }
 

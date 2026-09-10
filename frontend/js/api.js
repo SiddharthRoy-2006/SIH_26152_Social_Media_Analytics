@@ -7,32 +7,54 @@
 'use strict';
 
 let API_BASE = 'http://127.0.0.1:8001';
-const API_CANDIDATES = [
-  'http://127.0.0.1:8001',
-  'http://localhost:8001',
-  'http://127.0.0.1:8000',
-  'http://localhost:8000',
-];
+window.API_BASE = API_BASE;
 
 let _apiBaseVerified = false;
-let _isLoadingData = false;
+let _loadDataController = null;
+
+function getApiCandidates() {
+  const host = window.location.hostname || '127.0.0.1';
+  const candidates = [
+    `http://${host}:8001`,
+    'http://127.0.0.1:8001',
+    'http://localhost:8001',
+    `http://${host}:8000`,
+    'http://127.0.0.1:8000',
+    'http://localhost:8000',
+  ];
+  // If API_BASE is already set, prioritize it
+  if (API_BASE && !candidates.includes(API_BASE)) {
+    candidates.unshift(API_BASE);
+  }
+  return Array.from(new Set(candidates.filter(c => !c.includes(':5500'))));
+}
 
 async function probeBackend() {
-  const origin = window.location.origin;
-  if (origin && origin.startsWith('http')) {
-    if (!API_CANDIDATES.includes(origin)) {
-      API_CANDIDATES.unshift(origin);
+  // Fast probe of current API_BASE first if already verified
+  if (_apiBaseVerified && API_BASE) {
+    try {
+      const resp = await fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(1200) });
+      if (resp.ok) {
+        const data = await resp.json();
+        state.backendOK = true;
+        if (data.platforms) state.platformCapabilities = data.platforms;
+        return true;
+      }
+    } catch {
+      // Fall through to full discovery
     }
   }
 
-  for (const candidate of API_CANDIDATES) {
+  const candidates = getApiCandidates();
+  for (const candidate of candidates) {
     try {
       const resp = await fetch(`${candidate}/health`, {
-        signal: AbortSignal.timeout(1800),
+        signal: AbortSignal.timeout(1200),
       });
       if (resp.ok) {
         const data = await resp.json();
         API_BASE = candidate;
+        window.API_BASE = candidate;
         _apiBaseVerified = true;
         state.backendOK = true;
         if (data.platforms) {
@@ -41,9 +63,24 @@ async function probeBackend() {
         return true;
       }
     } catch {
-      // try next candidate
+      // Fast secondary root check
+      try {
+        const rootResp = await fetch(`${candidate}/`, {
+          signal: AbortSignal.timeout(800),
+        });
+        if (rootResp.ok) {
+          API_BASE = candidate;
+          window.API_BASE = candidate;
+          _apiBaseVerified = true;
+          state.backendOK = true;
+          return true;
+        }
+      } catch {
+        // Continue to next candidate
+      }
     }
   }
+
   _apiBaseVerified = false;
   state.backendOK = false;
   return false;
@@ -133,8 +170,14 @@ async function clearCredentialApi(platform) {
    ================================================================ */
 
 async function loadData() {
-  if (_isLoadingData) return;
-  _isLoadingData = true;
+  // Cancel previous in-flight data request immediately upon user action
+  if (_loadDataController) {
+    _loadDataController.abort();
+    _loadDataController = null;
+  }
+  _loadDataController = new AbortController();
+  const currentController = _loadDataController;
+  const signal = currentController.signal;
 
   const refreshBtn = $('refreshBtn');
   if (refreshBtn) refreshBtn.classList.add('spinning');
@@ -142,7 +185,7 @@ async function loadData() {
   const isCapLive = cap?.status === 'connected' || cap?.status === 'limited';
   updateStatusBadge(isCapLive ? 'fetching' : 'connecting');
 
-  // Verify or discover backend URL
+  // Verify or discover backend URL if not verified yet
   if (!_apiBaseVerified) {
     await probeBackend();
   }
@@ -166,9 +209,13 @@ async function loadData() {
       url = `${API_BASE}/analysis?topic=${encodeURIComponent(state.campaign.topic)}&query=${encodeURIComponent(state.campaign.query)}&platform=${encodeURIComponent(state.platform)}&period=${encodeURIComponent(state.dateRange)}&chart_period=${encodeURIComponent(state.chartPeriod)}${demoParam}`;
     }
 
-    const resp = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    const resp = await fetch(url, { signal });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const json = await resp.json();
+
+    // Check if another request superseded this one
+    if (signal.aborted) return;
+
     state.raw  = json;
     state.data = normalizePayload(json);
     state.backendOK  = true;
@@ -190,18 +237,23 @@ async function loadData() {
 
     if (typeof renderCurrentView === 'function') renderCurrentView();
   } catch (err) {
-    // Attempt re-probe
+    // If request was cancelled by user switching platform/topic, exit cleanly
+    if (err.name === 'AbortError' || signal.aborted) {
+      return;
+    }
+
+    // Only attempt re-probe if actually disconnected
     const found = await probeBackend();
-    if (found) {
-      _isLoadingData = false;
+    if (found && !signal.aborted) {
       return loadData();
     }
     state.backendOK = false;
-    state.data = emptyData();
     updateStatusBadge('offline');
     if (typeof renderCurrentView === 'function') renderCurrentView();
   } finally {
-    _isLoadingData = false;
+    if (_loadDataController === currentController) {
+      _loadDataController = null;
+    }
     if (refreshBtn) refreshBtn.classList.remove('spinning');
   }
 }

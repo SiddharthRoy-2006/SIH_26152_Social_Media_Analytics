@@ -309,6 +309,13 @@ function renderSettingsPage(ca, d) {
           </div>
           <button class="export-btn" id="exportBtn">↓ Export JSON</button>
         </div>
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-name">Blockchain Audit & Integrity</div>
+            <div class="setting-desc">Generate immutable on-chain SHA-256 fingerprint and verify report integrity.</div>
+          </div>
+          <button class="audit-btn-primary" style="padding:7px 14px;font-size:12px;border-radius:6px;" onclick="openBlockchainModal()">⛓ Inspect Audit Record</button>
+        </div>
       </div>
 
       <!-- About SocialIQ -->

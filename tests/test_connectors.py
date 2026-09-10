@@ -195,12 +195,29 @@ def test_live_analysis_provider_unconfigured_connector():
 
 
 def test_live_general_provider_unconfigured():
+    """
+    Verify LiveGeneralProvider returns empty when no connectors are registered
+    and no stored database records exist.
+
+    Note: The global Supabase DB may contain real data from previous sync runs,
+    so we mock `get_records` to return [] in order to isolate the "no data at all"
+    code path that the test was designed to exercise.
+    """
+    from unittest.mock import patch
+
     reg = ConnectorRegistry()
     provider = LiveGeneralProvider(reg)
     req = GeneralRequest(platform="All Platforms")
-    resp = provider.get_general(req)
+
+    # Patch the DB layer at the canonical source location so the inline import
+    # inside LiveGeneralProvider._collect() gets the mocked version.
+    with patch("backend.database.repository.get_records", return_value=[]), \
+         patch("backend.database.repository.save_social_records"):
+        resp = provider.get_general(req)
+
     assert resp.data_available is False
     assert resp.source == "empty"
+
 
 
 # ---------------------------------------------------------------------------

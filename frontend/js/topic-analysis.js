@@ -37,8 +37,10 @@ function selectSuggestion(name) {
 function renderTopicDashboard(ca, d) {
   const hasTopic = !!state.campaign.topic.trim();
   const isOffline = !state.backendOK;
-  const isDemo = state.dataSource === 'demo';
-  const isLive = state.dataSource === 'live';
+  const isDemo = state.dataSource === 'demo' || d?.source === 'demo';
+  const isLive = state.dataSource === 'live' || d?.source === 'live';
+  const isDatabase = state.dataSource === 'database' || d?.source === 'database';
+  const isMixed = state.dataSource === 'mixed' || d?.source === 'mixed';
   const cap = state.platformCapabilities ? state.platformCapabilities[state.platform] : null;
 
   ca.innerHTML = `
@@ -83,12 +85,20 @@ function renderTopicDashboard(ca, d) {
 
       <!-- Data Source Transparency Banner for Topic Mode -->
       ${hasTopic && d.dataAvailable ? `
-        <div class="data-source-banner ${isDemo ? 'demo' : isLive ? 'live' : 'unconfigured'}">
+        <div class="data-source-banner ${isDemo ? 'demo' : (isLive || isDatabase || isMixed) ? 'live' : 'unconfigured'}">
           <div style="display:flex;align-items:center;gap:8px">
-            <span>${isLive ? '🟢' : '⚡'}</span>
-            <span><strong>Data Source: ${isLive ? 'LIVE' : 'DEMO'}</strong> — ${isLive ? `Verified real-time ${esc(d.platform)} data for "${esc(d.topic)}"` : `Simulated demonstration dataset for "${esc(d.topic)}" explicitly selected`}</span>
+            <span>${isDemo ? '⚡' : isMixed ? '🔄' : isDatabase ? '💾' : '🟢'}</span>
+            <span><strong>Data Source: ${isMixed ? 'DATABASE + LIVE' : isDatabase ? 'DATABASE' : isLive ? 'LIVE' : 'DEMO'}</strong> — ${
+              isMixed
+                ? `Historical data reused from Supabase PostgreSQL + newly fetched real-time ${esc(d.platform)} records for "${esc(d.topic)}"`
+                : isDatabase
+                ? `Historical records loaded from Supabase PostgreSQL for "${esc(d.topic)}"`
+                : isLive
+                ? `Verified real-time ${esc(d.platform)} data for "${esc(d.topic)}"`
+                : `Simulated demonstration dataset for "${esc(d.topic)}" explicitly selected`
+            }</span>
           </div>
-          ${isDemo ? `<button class="btn-demo-secondary" style="padding:4px 10px;font-size:11.5px" onclick="disableDemoData('${esc(state.platform)}')">Switch to Live / Authentic</button>` : `<span class="source-badge live">Verified Live</span>`}
+          ${isDemo ? `<button class="btn-demo-secondary" style="padding:4px 10px;font-size:11.5px" onclick="disableDemoData('${esc(state.platform)}')">Switch to Live / Authentic</button>` : `<span class="source-badge live">${isMixed ? 'Database + Live' : isDatabase ? 'PostgreSQL' : 'Verified Live'}</span>`}
         </div>
       ` : ''}
 
@@ -124,6 +134,9 @@ function renderTopicDashboard(ca, d) {
         ${statCard('Comments', fmt(d.comments), 'ic-green', '💬', `${fmt(d.contentVolume)} ${state.platform==='YouTube'?'videos':'posts'} retrieved`, true)}
         ${statCard('Engagement Rate', pct(d.engagement), 'ic-purple', '✦', isLive ? 'Calculated from returned records' : (d.scoreStatus || 'Engagement quality'), d.engagement>=1.5)}
       </div>
+
+      <!-- Executive AI Summary Panel -->
+      <div id="t_aiSummary"></div>
 
       <!-- Area Chart + Score Ring -->
       <div class="grid-2-1">
@@ -278,6 +291,11 @@ function renderTopicDashboard(ca, d) {
 
     // Dynamic Activity Component (Day / Week / Month / Year)
     renderDynamicActivityComponent($('t_actBars'), d);
+
+    // Executive AI Summary
+    if (d.aiSummary) {
+      renderAISummary($('t_aiSummary'), d.aiSummary);
+    }
 
     // AI Preview
     renderAICards($('t_aiPreview'), (d.aiInsights || []).slice(0, 2));

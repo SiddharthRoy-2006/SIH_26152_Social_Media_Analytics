@@ -1,0 +1,13 @@
+{
+  "name": "socialiq-blockchain",
+  "version": "1.0.0",
+  "description": "SocialIQ Analytics — Blockchain-based Audit & Integrity Layer",
+  "scripts": {
+    "node": "hardhat node",
+    "compile": "hardhat compile",
+    "test": "hardhat test"
+  },
+  "devDependencies": {
+    "hardhat": "^2.22.18"
+  }
+}

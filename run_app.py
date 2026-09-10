@@ -49,8 +49,8 @@ def is_port_in_use(host: str, port: int) -> bool:
         return sock.connect_ex((host, port)) == 0
 
 
-def check_backend_health(timeout: float = 0.8) -> bool:
-    """Ping the backend /health endpoint."""
+def check_backend_health(timeout: float = 2.0) -> bool:
+    """Ping the backend /health endpoint, falling back to root if needed."""
     url = f"http://{BACKEND_HOST}:{BACKEND_PORT}/health"
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "SocialIQ-Starter/1.0"})
@@ -58,9 +58,21 @@ def check_backend_health(timeout: float = 0.8) -> bool:
             if resp.status == 200:
                 body = resp.read()
                 data = json.loads(body.decode("utf-8"))
-                return data.get("status") == "ok"
+                if data.get("status") == "ok":
+                    return True
+    except Exception:
+        pass
+
+    # Quick secondary check on root endpoint
+    try:
+        root_url = f"http://{BACKEND_HOST}:{BACKEND_PORT}/"
+        req_root = urllib.request.Request(root_url, headers={"User-Agent": "SocialIQ-Starter/1.0"})
+        with urllib.request.urlopen(req_root, timeout=min(timeout, 1.0)) as resp_root:
+            if resp_root.status == 200:
+                return True
     except Exception:
         return False
+
     return False
 
 

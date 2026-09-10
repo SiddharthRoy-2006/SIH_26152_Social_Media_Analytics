@@ -182,6 +182,17 @@ class DemoGeneralProvider:
             topic="",
         )
 
+        from backend.services.ai_model_manager import generate_evidence_summary
+        ai_summary = generate_evidence_summary(
+            platform=request.platform,
+            topic="General Ecosystem",
+            period=request.period,
+            metrics={"reach": reach, "growth": growth, "engagement_rate": engagement, "likes": likes, "comments": comments, "content_volume": content_vol},
+            sentiment=sentiment_dict,
+            top_trends=top_trends,
+            source="demo",
+        )
+
         return GeneralResponse(
             platform=request.platform,
             topic="", query="",
@@ -207,6 +218,7 @@ class DemoGeneralProvider:
             growth_series=growth_series,
             insights=insights_dict,
             ai_insights=ai_insights,
+            ai_summary=ai_summary,
             sentiment_series=sentiment_series,
             top_trends=top_trends,
             influencers=influencers,

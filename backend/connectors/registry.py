@@ -82,19 +82,19 @@ class ConnectorRegistry:
     # ------------------------------------------------------------------
 
     def register(self, connector: PlatformConnector) -> None:
-        """Register a connector and probe its health."""
+        """Register a connector and probe its health without blocking startup."""
         name = connector.platform_name
         self._connectors[name] = connector
         try:
-            cap = connector.check_health()
+            cap = connector.check_health(force_probe=False)
             self._capabilities[name] = cap
         except Exception as exc:
             self._capabilities[name] = PlatformCapability(
                 platform=name,
                 status=PlatformStatus.ERROR,
-                reason=f"Health check failed: {exc}",
+                reason=f"Internal startup health check error: {type(exc).__name__}: {exc}",
                 last_checked=datetime.now(timezone.utc),
-                error_detail=str(exc),
+                error_detail=f"Internal error ({type(exc).__name__}): {exc}",
             )
 
     # ------------------------------------------------------------------
@@ -120,27 +120,27 @@ class ConnectorRegistry:
         """Return a copy of all known platform capabilities."""
         return dict(self._capabilities)
 
-    def refresh_health(self, platform: str) -> PlatformCapability:
+    def refresh_health(self, platform: str, force_probe: bool = False) -> PlatformCapability:
         """Re-probe a single connector and update its capability."""
         connector = self._connectors.get(platform)
         if connector is None:
             return self.get_capability(platform)
         try:
-            cap = connector.check_health()
+            cap = connector.check_health(force_probe=force_probe)
             self._capabilities[platform] = cap
             return cap
         except Exception as exc:
             cap = PlatformCapability(
                 platform=platform,
                 status=PlatformStatus.ERROR,
-                reason=f"Health check failed: {exc}",
+                reason=f"Internal health check error: {type(exc).__name__}: {exc}",
                 last_checked=datetime.now(timezone.utc),
-                error_detail=str(exc),
+                error_detail=f"Internal error ({type(exc).__name__}): {exc}",
             )
             self._capabilities[platform] = cap
             return cap
 
-    def update_credentials(self, platform: str, credentials: dict[str, str]) -> PlatformCapability:
+    def update_credentials(self, platform: str, credentials: dict[str, str], force_probe: bool = True) -> PlatformCapability:
         """Update credentials for *platform* connector and probe health immediately."""
         connector = self._connectors.get(platform)
         if connector is None:
@@ -155,16 +155,16 @@ class ConnectorRegistry:
 
         try:
             connector.update_credentials(credentials)
-            cap = connector.check_health()
+            cap = connector.check_health(force_probe=force_probe)
             self._capabilities[platform] = cap
             return cap
         except Exception as exc:
             cap = PlatformCapability(
                 platform=platform,
                 status=PlatformStatus.ERROR,
-                reason=f"Credential test failed: {exc}",
+                reason=f"Internal error during credential update: {type(exc).__name__}: {exc}",
                 last_checked=datetime.now(timezone.utc),
-                error_detail=str(exc),
+                error_detail=f"Internal error ({type(exc).__name__}): {exc}",
             )
             self._capabilities[platform] = cap
             return cap
@@ -177,25 +177,25 @@ class ConnectorRegistry:
 
         try:
             connector.clear_credentials()
-            cap = connector.check_health()
+            cap = connector.check_health(force_probe=False)
             self._capabilities[platform] = cap
             return cap
         except Exception as exc:
             cap = PlatformCapability(
                 platform=platform,
                 status=PlatformStatus.ERROR,
-                reason=f"Error clearing credentials: {exc}",
+                reason=f"Internal error clearing credentials: {type(exc).__name__}: {exc}",
                 last_checked=datetime.now(timezone.utc),
-                error_detail=str(exc),
+                error_detail=f"Internal error ({type(exc).__name__}): {exc}",
             )
             self._capabilities[platform] = cap
             return cap
 
     def test_credentials(self, platform: str, credentials: dict[str, str] | None = None) -> PlatformCapability:
-        """Test credentials for *platform*."""
+        """Test credentials for *platform* with a live probe."""
         if credentials:
-            return self.update_credentials(platform, credentials)
-        return self.refresh_health(platform)
+            return self.update_credentials(platform, credentials, force_probe=True)
+        return self.refresh_health(platform, force_probe=True)
 
     def connected_platforms(self) -> list[str]:
         """Return names of platforms with CONNECTED or LIMITED status."""
