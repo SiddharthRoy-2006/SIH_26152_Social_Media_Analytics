@@ -88,8 +88,9 @@ class YouTubeConnector(PlatformConnector):
             "status": "CONNECTED" if self._api_key else "NOT_CONFIGURED",
         }
         from backend.services.oauth_service import get_oauth_service
-        oauth_status = get_oauth_service().get_safe_status("YouTube")
-        oauth_state = oauth_status.get("status", "NOT_CONNECTED")
+        oauth_svc = get_oauth_service()
+        analytics_probe = oauth_svc.probe_analytics_layer("YouTube", force=force_probe)
+        reporting_probe = oauth_svc.probe_reporting_layer("YouTube", force=force_probe)
 
         analytics_api_layer = {
             "name": "YouTube Analytics API",
@@ -97,7 +98,8 @@ class YouTubeConnector(PlatformConnector):
             "usage": "Channel owner audience retention, viewer demographics, and estimated watch time.",
             "provides": ["Viewer demographics", "Audience retention", "Geographic watch time"],
             "auth_required": True,
-            "status": oauth_state,
+            "status": analytics_probe.get("status", "NOT_CONNECTED"),
+            "reason": analytics_probe.get("reason"),
         }
         reporting_api_layer = {
             "name": "YouTube Reporting API",
@@ -105,7 +107,8 @@ class YouTubeConnector(PlatformConnector):
             "usage": "Bulk scheduled historical channel reporting datasets.",
             "provides": ["Scheduled bulk reporting jobs", "Historical daily aggregated stats"],
             "auth_required": True,
-            "status": "NOT_CONFIGURED" if oauth_state == "CONFIGURATION_REQUIRED" else "NOT_CONNECTED",
+            "status": reporting_probe.get("status", "NOT_CONNECTED"),
+            "reason": reporting_probe.get("reason"),
         }
 
         access_layers = [data_api_layer, analytics_api_layer, reporting_api_layer]
@@ -113,13 +116,16 @@ class YouTubeConnector(PlatformConnector):
         unsupported_metrics = ["shares", "audience_demographics", "direct_subscriber_stream"]
 
         if not self._api_key:
+            # If OAuth is active, platform has limited capability
+            is_oauth_live = analytics_probe.get("status") == "CONNECTED" or reporting_probe.get("status") == "CONNECTED"
             return PlatformCapability(
                 platform="YouTube",
-                status=PlatformStatus.NOT_CONFIGURED,
-                reason="YouTube Data API v3 API Key is not configured.",
+                status=PlatformStatus.LIMITED if is_oauth_live else PlatformStatus.NOT_CONFIGURED,
+                reason="YouTube Analytics OAuth connected. YouTube Data API v3 API Key required for public video search." if is_oauth_live else "YouTube Data API v3 API Key is not configured.",
                 credential_fields=["api_key"],
                 approx_test_time="1-3 seconds",
                 last_checked=now,
+                last_successful=now if is_oauth_live else None,
                 access_layers=access_layers,
                 supported_metrics=supported_metrics,
                 unsupported_metrics=unsupported_metrics,

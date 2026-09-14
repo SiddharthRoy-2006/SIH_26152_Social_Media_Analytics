@@ -273,8 +273,12 @@
             <div class="chat-bubble-text">${formatMessageText(msg.content)}</div>
             <div class="chat-msg-actions">
               <button class="chat-action-btn" type="button"
-                      title="Edit this message"
+                      title="Edit this message" aria-label="Edit message"
                       onclick="window._chatEditMessage(${idx})">✏ Edit</button>
+              <span class="chat-action-sep" aria-hidden="true">|</span>
+              <button class="chat-action-btn delete" type="button"
+                      title="Delete this message" aria-label="Delete message"
+                      onclick="window._chatDeleteMessage(${idx})">🗑 Delete</button>
             </div>
           </div>
         </div>
@@ -311,7 +315,7 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Copy & Edit actions (global so onclick can call them)
+  // Copy, Edit & Delete actions (global so onclick can call them)
   // ---------------------------------------------------------------------------
 
   window._chatCopyResponse = function (idx) {
@@ -347,6 +351,21 @@
     // Move cursor to end
     const len = input.value.length;
     input.setSelectionRange(len, len);
+  };
+
+  window._chatDeleteMessage = function (idx) {
+    const msg = chatHistory[idx];
+    if (!msg || msg.role !== 'user') return;
+    // Remove user message and its corresponding assistant answer if present
+    const nextMsg = chatHistory[idx + 1];
+    if (nextMsg && nextMsg.role === 'assistant') {
+      chatHistory.splice(idx, 2);
+    } else {
+      chatHistory.splice(idx, 1);
+    }
+    saveSessionHistory();
+    renderStream();
+    showToast('Message deleted.');
   };
 
   // ---------------------------------------------------------------------------
@@ -408,13 +427,36 @@
       const ctx     = getActiveContext();
       const apiBase = window.API_BASE || 'http://127.0.0.1:8001';
 
+      const s = window.state || {};
+      const d = s.data || {};
+      const dashboardContext = {
+        platform:          s.platform || ctx.platform,
+        topic:             ctx.topic,
+        query:             s.campaign?.query || '',
+        period:            s.dateRange || ctx.period,
+        chart_period:      s.chartPeriod || ctx.chart_period,
+        mode:              s.mode || ctx.mode,
+        data_source:       s.dataSource || 'empty',
+        data_available:    !!s.dataAvail,
+        metrics:           d.metrics || null,
+        sentiment:         d.sentiment || null,
+        emotions:          d.emotions || null,
+        activity_series:   d.activity_series || d.activity || [],
+        growth_series:     d.growth_series || [],
+        top_trends:        d.top_trends || (d.trending?.topics ? d.trending.topics.map(t => ({ name: t })) : []),
+        influencers:       d.influencers || [],
+        insights:          d.insights || d.ai_insights || [],
+        blockchain_status: s.blockchainStatus || null,
+      };
+
       const payload = {
-        message:      query,
-        platform:     ctx.platform,
-        topic:        ctx.topic,
-        period:       ctx.period,
-        chart_period: ctx.chart_period,
-        mode:         ctx.mode
+        message:           query,
+        platform:          ctx.platform,
+        topic:             ctx.topic,
+        period:            ctx.period,
+        chart_period:      ctx.chart_period,
+        mode:              ctx.mode,
+        dashboard_context: dashboardContext,
       };
 
       const res = await fetch(`${apiBase}/api/chat/message`, {

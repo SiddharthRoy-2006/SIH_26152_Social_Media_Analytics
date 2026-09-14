@@ -10,20 +10,35 @@ const BlockchainUI = (function () {
   let _health = null;
   let _activeAudit = null;
   let _lastVerification = null;
+  let _reportFingerprint = null;
+  let _currentReportId = null;
   let _isAuditing = false;
   let _isVerifying = false;
+  let _errorMessage = null;
 
   async function checkHealth() {
     try {
-      const resp = await fetch(`${API_BASE}/audit/blockchain/health`);
+      const resp = await fetch(`${API_BASE}/api/audit/blockchain/health`);
       if (resp.ok) {
         _health = await resp.json();
         updateBadge();
+        return _health;
       }
-    } catch (err) {
-      _health = { status: 'UNAVAILABLE', connected: false, message: 'Blockchain node offline' };
-      updateBadge();
+    } catch {
+      // Fallback path without /api prefix
+      try {
+        const resp2 = await fetch(`${API_BASE}/audit/blockchain/health`);
+        if (resp2.ok) {
+          _health = await resp2.json();
+          updateBadge();
+          return _health;
+        }
+      } catch (err) {
+        _health = { status: 'UNAVAILABLE', connected: false, message: 'Blockchain node offline' };
+        updateBadge();
+      }
     }
+    return _health;
   }
 
   function updateBadge() {
@@ -35,17 +50,17 @@ const BlockchainUI = (function () {
     if (!_health || !_health.connected) {
       dot.className = 'blockchain-dot offline';
       text.textContent = 'Blockchain: Offline';
-      badge.title = 'Local EVM Blockchain node unavailable';
+      badge.title = 'Local EVM Blockchain node unavailable. Run Hardhat node on port 8545.';
       return;
     }
 
     if (_lastVerification) {
-      if (_lastVerification.status === 'VERIFIED') {
+      if (_lastVerification.status === 'VERIFIED' || _lastVerification.status === 'VERIFIED_OFFCHAIN') {
         dot.className = 'blockchain-dot verified';
         text.textContent = 'Integrity: Verified ✓';
         badge.title = `Block #${_lastVerification.block_number || 'On-chain'}: Hash verified`;
         return;
-      } else if (_lastVerification.status === 'MODIFIED') {
+      } else if (_lastVerification.status === 'MODIFIED' || _lastVerification.status === 'MODIFIED_OFFCHAIN') {
         dot.className = 'blockchain-dot modified';
         text.textContent = 'ALERT: Modified ✗';
         badge.title = 'Report has been tampered with! Hash mismatch.';
@@ -65,6 +80,35 @@ const BlockchainUI = (function () {
     badge.title = 'Click to view blockchain audit & verification options';
   }
 
+  async function inspectCurrentReport() {
+    if (!state.raw) return;
+    try {
+      const resp = await fetch(`${API_BASE}/api/audit/inspect`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ report: state.raw }),
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.blockchain_health) {
+          _health = data.blockchain_health;
+        }
+        _reportFingerprint = data.canonical_hash;
+        _currentReportId = data.report_id;
+        if (data.is_audited && data.audit) {
+          _activeAudit = data.audit;
+          if (!_lastVerification || _lastVerification.status !== 'MODIFIED') {
+            _lastVerification = { status: 'VERIFIED', block_number: data.audit.block_number };
+          }
+        }
+        updateBadge();
+        renderModalContent();
+      }
+    } catch (err) {
+      console.debug('Inspect report failed:', err);
+    }
+  }
+
   async function auditCurrentReport() {
     if (!state.raw) {
       showToast('No active report available to audit. Generate an analysis first.');
@@ -73,6 +117,7 @@ const BlockchainUI = (function () {
     if (_isAuditing) return;
 
     _isAuditing = true;
+    _errorMessage = null;
     showToast('Submitting audit transaction to smart contract…');
     renderModalContent();
 
@@ -80,7 +125,7 @@ const BlockchainUI = (function () {
       const resp = await fetch(`${API_BASE}/api/audit/record`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ report: state.raw }),
+        body: JSON.stringify({ report: state.raw, report_id: _currentReportId }),
       });
 
       const res = await resp.json();
@@ -88,14 +133,18 @@ const BlockchainUI = (function () {
 
       if (res.success || res.status === 'RECORDED') {
         _activeAudit = res;
+        _reportFingerprint = res.report_hash;
+        _currentReportId = res.report_id;
         _lastVerification = { status: 'VERIFIED', block_number: res.block_number };
         showToast('✓ Report successfully audited and stored on blockchain!');
       } else {
-        showToast(`Audit status: ${res.message || res.status}`);
+        _errorMessage = res.message || res.status || 'Audit submission failed';
+        showToast(`Audit status: ${_errorMessage}`);
       }
     } catch (err) {
       _isAuditing = false;
-      showToast(`Audit failed: ${err.message}`);
+      _errorMessage = `Connection failed: ${err.message || err}`;
+      showToast(`Audit failed: ${_errorMessage}`);
     }
 
     updateBadge();
@@ -110,11 +159,12 @@ const BlockchainUI = (function () {
     if (_isVerifying) return;
 
     _isVerifying = true;
+    _errorMessage = null;
     showToast('Querying smart contract for cryptographic hash match…');
     renderModalContent();
 
     try {
-      const reportId = _activeAudit ? _activeAudit.report_id : null;
+      const reportId = _activeAudit ? _activeAudit.report_id : _currentReportId;
       const resp = await fetch(`${API_BASE}/api/audit/verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -124,10 +174,11 @@ const BlockchainUI = (function () {
       const res = await resp.json();
       _isVerifying = false;
       _lastVerification = res;
+      if (res.current_hash) _reportFingerprint = res.current_hash;
 
-      if (res.status === 'VERIFIED') {
+      if (res.status === 'VERIFIED' || res.status === 'VERIFIED_OFFCHAIN') {
         showToast('✓ INTEGRITY VERIFIED: Cryptographic report hash matches on-chain record!');
-      } else if (res.status === 'MODIFIED') {
+      } else if (res.status === 'MODIFIED' || res.status === 'MODIFIED_OFFCHAIN') {
         showToast('⚠ ALERT: Report modified! Current hash diverges from blockchain record.');
       } else if (res.status === 'NOT_AUDITED') {
         showToast('Notice: This report has not yet been audited on-chain.');
@@ -136,7 +187,8 @@ const BlockchainUI = (function () {
       }
     } catch (err) {
       _isVerifying = false;
-      showToast(`Verification failed: ${err.message}`);
+      _errorMessage = `Verification failed: ${err.message || err}`;
+      showToast(_errorMessage);
     }
 
     updateBadge();
@@ -144,7 +196,8 @@ const BlockchainUI = (function () {
   }
 
   async function simulateTamperTest() {
-    if (!_activeAudit || !_activeAudit.report_id) {
+    const reportId = _activeAudit ? _activeAudit.report_id : _currentReportId;
+    if (!reportId) {
       showToast('Please audit a report first before testing tamper detection.');
       return;
     }
@@ -154,12 +207,15 @@ const BlockchainUI = (function () {
       const resp = await fetch(`${API_BASE}/api/audit/tamper-test`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ report_id: _activeAudit.report_id }),
+        body: JSON.stringify({ report_id: reportId }),
       });
 
       const res = await resp.json();
       if (res.verification_result) {
         _lastVerification = res.verification_result;
+        if (res.tampered_hash) {
+          _reportFingerprint = res.tampered_hash;
+        }
         updateBadge();
         renderModalContent();
         showToast('⚠ TAMPER DETECTED: Smart contract rejected modified hash!');
@@ -170,7 +226,7 @@ const BlockchainUI = (function () {
   }
 
   function copyToClipboard(text, label) {
-    if (!text) return;
+    if (!text || text === '—') return;
     navigator.clipboard.writeText(text).then(() => {
       showToast(`${label || 'Value'} copied to clipboard`);
     }).catch(() => {
@@ -187,9 +243,15 @@ const BlockchainUI = (function () {
       modal.onclick = (e) => { if (e.target === modal) closeModal(); };
       document.body.appendChild(modal);
     }
+    _errorMessage = null;
     renderModalContent();
     modal.classList.remove('hidden');
-    checkHealth();
+
+    checkHealth().then(() => {
+      if (state.raw) {
+        inspectCurrentReport();
+      }
+    });
   }
 
   function closeModal() {
@@ -201,12 +263,20 @@ const BlockchainUI = (function () {
     const modal = document.getElementById('blockchainModal');
     if (!modal) return;
 
-    const bcHealth = _health || { status: 'UNKNOWN', connected: false, network: 'Local EVM (Hardhat)' };
+    const bcHealth = _health || { status: 'UNKNOWN', connected: false, network: 'Local EVM (Hardhat Node)' };
     const audit = _activeAudit;
     const vResult = _lastVerification;
 
     let statusHtml = '';
-    if (vResult && vResult.status === 'VERIFIED') {
+    if (_errorMessage) {
+      statusHtml = `<div class="audit-status-banner modified" style="border-left:4px solid var(--red);background:rgba(239,68,68,0.08);padding:10px 14px;border-radius:var(--r-sm);margin-bottom:14px;display:flex;gap:10px;align-items:center;">
+        <span class="status-icon" style="color:var(--red);font-weight:bold;font-size:18px;">✕</span>
+        <div>
+          <strong style="color:var(--red);">BLOCKCHAIN ACTION FAILED</strong>
+          <div style="font-size:12px;color:var(--text-2);">${esc(_errorMessage)}</div>
+        </div>
+      </div>`;
+    } else if (vResult && (vResult.status === 'VERIFIED' || vResult.status === 'VERIFIED_OFFCHAIN')) {
       statusHtml = `<div class="audit-status-banner verified">
         <span class="status-icon">✓</span>
         <div>
@@ -214,7 +284,7 @@ const BlockchainUI = (function () {
           <div>Report hash matches the immutable blockchain record. Zero unauthorized changes detected.</div>
         </div>
       </div>`;
-    } else if (vResult && vResult.status === 'MODIFIED') {
+    } else if (vResult && (vResult.status === 'MODIFIED' || vResult.status === 'MODIFIED_OFFCHAIN')) {
       statusHtml = `<div class="audit-status-banner modified">
         <span class="status-icon">⚠</span>
         <div>
@@ -227,7 +297,7 @@ const BlockchainUI = (function () {
         <span class="status-icon">⛓</span>
         <div>
           <strong>AUDIT RECORDED ON-CHAIN</strong>
-          <div>Transaction confirmed in block #${audit.block_number || '1'}. Tamper-evident proof stored.</div>
+          <div>Transaction confirmed in block #${audit.block_number != null ? audit.block_number : '1'}. Tamper-evident proof stored.</div>
         </div>
       </div>`;
     } else {
@@ -240,10 +310,10 @@ const BlockchainUI = (function () {
       </div>`;
     }
 
-    const txHash = audit ? (audit.transaction_hash || '0x28b1bdb02cb181766fac4a6b5e5bf9fc2e82982450cd8e9298fa36db816fe0f9') : '—';
-    const reportHash = (audit && audit.report_hash) || (vResult && vResult.current_hash) || '—';
-    const contractAddr = (bcHealth && bcHealth.contract_address) || '0x5FbDB2315678afecb367f032d93F642f64180aa3';
-    const blockNum = (audit && audit.block_number) || (vResult && vResult.block_number) || (bcHealth && bcHealth.block_number) || '—';
+    const contractAddr = (bcHealth && bcHealth.contract_address) || (audit && audit.contract_address) || '—';
+    const reportHash = _reportFingerprint || (audit && audit.report_hash) || (vResult && (vResult.current_hash || vResult.tampered_hash)) || '—';
+    const txHash = audit ? (audit.transaction_hash || (audit.status === 'PENDING_BLOCKCHAIN' ? 'Pending Blockchain Mining' : '—')) : '—';
+    const blockNum = (audit && audit.block_number != null) ? audit.block_number : (vResult && vResult.block_number != null) ? vResult.block_number : '—';
 
     modal.innerHTML = `
       <div class="modal-card blockchain-modal-card">
@@ -262,7 +332,7 @@ const BlockchainUI = (function () {
             <span class="audit-label">Blockchain Network</span>
             <div class="audit-val-row">
               <span class="audit-value">${esc(bcHealth.network || 'Local EVM (Hardhat Node)')}</span>
-              <span class="audit-network-pill ${bcHealth.connected ? 'online' : 'offline'}">${bcHealth.connected ? 'Chain ID: 31337' : 'Offline'}</span>
+              <span class="audit-network-pill ${bcHealth.connected ? 'online' : 'offline'}">${bcHealth.connected ? 'Chain ID: ' + (bcHealth.chain_id || 31337) : 'Offline'}</span>
             </div>
           </div>
 
@@ -293,7 +363,7 @@ const BlockchainUI = (function () {
           <div class="audit-meta-row">
             <div>
               <span class="audit-label">Mined Block</span>
-              <div class="audit-subval">#${esc(String(blockNum))}</div>
+              <div class="audit-subval">${blockNum !== '—' ? '#' + esc(String(blockNum)) : '#—'}</div>
             </div>
             <div>
               <span class="audit-label">Storage Architecture</span>
@@ -328,10 +398,11 @@ const BlockchainUI = (function () {
   return {
     init: function () {
       checkHealth();
-      setInterval(checkHealth, 20000);
+      setInterval(checkHealth, 15000);
     },
     checkHealth,
     updateBadge,
+    inspectCurrentReport,
     auditCurrentReport,
     verifyCurrentReport,
     simulateTamperTest,

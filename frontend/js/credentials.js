@@ -384,18 +384,72 @@ function renderCredentialCards() {
       : meta.layers || [];
 
     const layerBlocksHTML = meta.layers.map((layerDef, lIdx) => {
-      const serverLayer = serverLayers[lIdx] || {};
-      const isConnected = isPlatformConnected && !layerDef.isOAuth;
-      const layerStatusText = isConnected ? 'CONNECTED' : layerDef.isOAuth ? 'NOT CONNECTED (OAUTH REQUIRED)' : (isPlatformConnected ? 'CONNECTED' : 'NOT CONFIGURED');
-      const layerBadgeColor = isConnected ? 'var(--success)' : layerDef.isOAuth ? 'var(--accent)' : 'var(--text-3)';
-      const layerBadgeBg = isConnected ? 'rgba(16,185,129,0.12)' : layerDef.isOAuth ? 'rgba(99,102,241,0.12)' : 'rgba(255,255,255,0.06)';
+      const serverLayer = (cap.access_layers || []).find(l => l.name === layerDef.name) || serverLayers[lIdx] || {};
+      const sStatus = (serverLayer.status || '').toUpperCase();
+      const sReason = serverLayer.reason || '';
+
+      let layerStatusText = 'NOT CONFIGURED';
+      let layerBadgeColor = 'var(--text-3)';
+      let layerBadgeBg = 'rgba(255,255,255,0.06)';
+      const isAuthorizedOAuth = sStatus === 'CONNECTED' || sStatus === 'AUTHORIZED' || sStatus === 'REPORTING_JOB_NOT_CONFIGURED';
+
+      if (layerDef.isOAuth) {
+        if (sStatus === 'CONNECTED') {
+          layerStatusText = 'CONNECTED';
+          layerBadgeColor = 'var(--success)';
+          layerBadgeBg = 'rgba(16,185,129,0.15)';
+        } else if (sStatus === 'REPORTING_JOB_NOT_CONFIGURED') {
+          layerStatusText = 'CONNECTED (REPORTS NOT YET AVAILABLE)';
+          layerBadgeColor = 'var(--accent)';
+          layerBadgeBg = 'rgba(99,102,241,0.15)';
+        } else if (sStatus === 'AUTHORIZED') {
+          if (layerDef.id === 'reporting_api') {
+            layerStatusText = 'CONNECTED (REPORTS NOT YET AVAILABLE)';
+            layerBadgeColor = 'var(--accent)';
+            layerBadgeBg = 'rgba(99,102,241,0.15)';
+          } else {
+            layerStatusText = 'AUTHORIZED / LIVE-READY';
+            layerBadgeColor = 'var(--success)';
+            layerBadgeBg = 'rgba(16,185,129,0.15)';
+          }
+        } else if (sStatus === 'API_NOT_ENABLED') {
+          layerStatusText = 'API NOT ENABLED IN CLOUD';
+          layerBadgeColor = 'var(--warning, #f59e0b)';
+          layerBadgeBg = 'rgba(245,158,11,0.12)';
+        } else if (sStatus === 'NO_CHANNEL_ASSOCIATED') {
+          layerStatusText = 'NO CHANNEL LINKED';
+          layerBadgeColor = 'var(--warning, #f59e0b)';
+          layerBadgeBg = 'rgba(245,158,11,0.12)';
+        } else if (sStatus === 'INVALID_SCOPE') {
+          layerStatusText = 'INSUFFICIENT PERMISSIONS';
+          layerBadgeColor = 'var(--warning, #f59e0b)';
+          layerBadgeBg = 'rgba(245,158,11,0.12)';
+        } else if (sStatus === 'EXPIRED') {
+          layerStatusText = 'TOKEN EXPIRED';
+          layerBadgeColor = 'var(--danger, #ef4444)';
+          layerBadgeBg = 'rgba(239,68,68,0.12)';
+        } else if (sStatus === 'CONFIGURATION_REQUIRED' || sStatus === 'NOT_CONFIGURED') {
+          layerStatusText = 'CONFIGURATION REQUIRED';
+          layerBadgeColor = 'var(--warning, #f59e0b)';
+          layerBadgeBg = 'rgba(245,158,11,0.12)';
+        } else {
+          layerStatusText = 'NOT CONNECTED (OAUTH REQUIRED)';
+          layerBadgeColor = 'var(--accent)';
+          layerBadgeBg = 'rgba(99,102,241,0.12)';
+        }
+      } else {
+        const isConnected = isPlatformConnected && sStatus !== 'NOT_CONFIGURED';
+        layerStatusText = isConnected ? 'CONNECTED' : (sStatus === 'NOT_CONFIGURED' ? 'NOT CONFIGURED' : 'NOT CONNECTED');
+        layerBadgeColor = isConnected ? 'var(--success)' : 'var(--text-3)';
+        layerBadgeBg = isConnected ? 'rgba(16,185,129,0.12)' : 'rgba(255,255,255,0.06)';
+      }
 
       if (layerDef.isOAuth) {
         return `
-          <div class="access-layer-block oauth-layer" style="margin:10px 0;background:var(--surface-2);border-radius:var(--r-sm);padding:12px;border:1px solid var(--border);border-left:3px solid var(--accent)">
+          <div class="access-layer-block oauth-layer" style="margin:10px 0;background:var(--surface-2);border-radius:var(--r-sm);padding:12px;border:1px solid var(--border);border-left:3px solid ${isAuthorizedOAuth ? 'var(--success)' : 'var(--accent)'}">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">
               <div>
-                <span style="font-size:10px;font-weight:700;letter-spacing:0.5px;color:var(--accent);text-transform:uppercase">ACCESS LAYER ${lIdx + 1} — AUTHENTICATED</span>
+                <span style="font-size:10px;font-weight:700;letter-spacing:0.5px;color:${isAuthorizedOAuth ? 'var(--success)' : 'var(--accent)'};text-transform:uppercase">ACCESS LAYER ${lIdx + 1} — AUTHENTICATED</span>
                 <div style="font-weight:600;font-size:13px;color:var(--text);margin-top:2px">${esc(layerDef.name)}</div>
                 <div style="font-size:11px;color:var(--text-3);margin-top:1px">Auth Protocol: <strong>${esc(layerDef.authType)}</strong></div>
               </div>
@@ -404,6 +458,7 @@ function renderCredentialCards() {
               </span>
             </div>
             <div style="font-size:11.5px;color:var(--text-2);margin-bottom:8px">${esc(layerDef.usage)}</div>
+            ${sReason ? `<div style="font-size:11px;color:var(--text-3);margin-bottom:8px;padding:4px 8px;background:rgba(255,255,255,0.03);border-radius:4px">ℹ️ ${esc(sReason)}</div>` : ''}
             <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px">
               ${(layerDef.provides || []).map(p => `
                 <span style="background:rgba(99,102,241,0.08);color:var(--accent);padding:2px 6px;border-radius:4px;font-size:10px">✓ ${esc(p)}</span>
@@ -411,9 +466,9 @@ function renderCredentialCards() {
             </div>
             <div style="display:flex;justify-content:space-between;align-items:center;padding-top:6px;border-top:1px solid rgba(255,255,255,0.04)">
               <span style="font-size:10.5px;color:var(--text-3)">Standard Google/Meta/X Consent Flow</span>
-              <button type="button" class="cred-btn-oauth" style="background:var(--accent);color:#fff;border:none;padding:5px 12px;border-radius:var(--r-sm);font-size:11.5px;font-weight:600;cursor:pointer"
+              <button type="button" class="cred-btn-oauth" style="background:${isAuthorizedOAuth ? 'var(--surface-3)' : 'var(--accent)'};color:#fff;border:none;padding:5px 12px;border-radius:var(--r-sm);font-size:11.5px;font-weight:600;cursor:pointer"
                       onclick="showOAuthInfoModal('${esc(platform)}', '${esc(layerDef.name)}', '${esc(layerDef.scopes || '')}', '${esc(layerDef.info || '')}')">
-                🔗 ${esc(layerDef.buttonLabel || 'Connect Account')}
+                ${isAuthorizedOAuth ? '🔄 Reconnect Account' : '🔗 ' + esc(layerDef.buttonLabel || 'Connect Account')}
               </button>
             </div>
           </div>

@@ -22,6 +22,10 @@ from backend.database.repository import (
 router = APIRouter(prefix="/audit", tags=["blockchain-audit"])
 
 
+class AuditInspectRequest(BaseModel):
+    report: dict[str, Any] = Field(..., description="Full analytical report object to inspect")
+
+
 class AuditRecordRequest(BaseModel):
     report: dict[str, Any] = Field(..., description="Full analytical report object to audit")
     report_id: str | None = Field(default=None, description="Optional custom report identifier")
@@ -34,6 +38,16 @@ class AuditVerifyRequest(BaseModel):
 
 class TamperTestRequest(BaseModel):
     report_id: str = Field(..., description="Report ID of previously audited report")
+
+
+@router.post("/inspect")
+def inspect_report(payload: AuditInspectRequest) -> dict[str, Any]:
+    """
+    Computes deterministic canonical SHA-256 hash of report, derives report_id,
+    and returns existing audit metadata (if already audited) along with blockchain health.
+    """
+    service = get_blockchain_service()
+    return service.inspect_report(payload.report)
 
 
 @router.post("/record")

@@ -225,14 +225,30 @@ async function loadData() {
 
     if (!state.dataAvail) {
       updateStatusBadge('empty');
+    } else if (state.dataSource === 'mixed') {
+      if (state.platformDemo) {
+        delete state.platformDemo[state.platform];
+      }
+      updateStatusBadge('mixed');
+      showToast('DATABASE + LIVE DATA CONNECTED', 2000);
+    } else if (state.dataSource === 'database') {
+      if (state.platformDemo) {
+        delete state.platformDemo[state.platform];
+      }
+      updateStatusBadge('database');
+      showToast('DATABASE HISTORICAL DATA LOADED', 2000);
     } else if (state.dataSource === 'live') {
+      if (state.platformDemo) {
+        delete state.platformDemo[state.platform];
+      }
       updateStatusBadge('live');
+      showToast('LIVE DATA CONNECTED', 2000);
     } else if (state.dataSource === 'limited') {
       updateStatusBadge('limited');
     } else if (state.dataSource === 'demo') {
       updateStatusBadge('demo');
     } else {
-      updateStatusBadge('demo');
+      updateStatusBadge('empty');
     }
 
     if (typeof renderCurrentView === 'function') renderCurrentView();
@@ -266,23 +282,43 @@ function updateStatusBadge(s) {
   const cap = state.platformCapabilities ? state.platformCapabilities[state.platform] : null;
   const isCapLive = cap?.status === 'connected' || cap?.status === 'limited';
 
-  if (s === 'live') {
+  if (s === 'mixed') {
+    badge.classList.add('live', 'mixed');
+    text.textContent = 'DATA SOURCE: DATABASE + LIVE';
+  } else if (s === 'database') {
+    badge.classList.add('live', 'database');
+    text.textContent = 'DATA SOURCE: DATABASE';
+  } else if (s === 'live') {
     badge.classList.add('live');
-    text.textContent = `LIVE — ${state.platform}`;
+    text.textContent = 'DATA SOURCE: LIVE';
   } else if (s === 'limited') {
     badge.classList.add('limited');
-    text.textContent = 'Limited Access';
+    text.textContent = 'DATA SOURCE: LIMITED';
   } else if (s === 'demo') {
     badge.classList.add('demo');
-    text.textContent = 'DEMO (Explicit Selection)';
+    text.textContent = 'DATA SOURCE: DEMO';
   } else if (s === 'offline') {
+    badge.classList.add('offline');
     text.textContent = 'Backend Offline';
   } else if (s === 'connecting' || s === 'fetching') {
-    text.textContent = isCapLive ? 'Fetching live data…' : 'Connecting…';
+    badge.classList.add(isCapLive ? 'fetching' : 'connecting');
+    const topicSnippet = state.campaign?.topic ? ` FOR "${state.campaign.topic.slice(0, 18)}…"` : '';
+    text.textContent = isCapLive ? `FETCHING LIVE DATA${topicSnippet.toUpperCase()}` : 'Connecting…';
+  } else if (s === 'unavailable') {
+    badge.classList.add('unavailable');
+    text.textContent = 'DATA SOURCE: UNAVAILABLE';
+  } else if (s === 'error') {
+    badge.classList.add('error');
+    text.textContent = 'DATA SOURCE: ERROR';
   } else {
-    if (cap?.status === 'not_configured') text.textContent = 'Not Configured';
-    else if (cap?.status === 'unavailable') text.textContent = 'Unavailable';
-    else text.textContent = 'No Data';
+    if (cap?.status === 'not_configured') {
+      text.textContent = 'DATA SOURCE: NOT CONFIGURED';
+    } else if (cap?.status === 'unavailable') {
+      badge.classList.add('unavailable');
+      text.textContent = 'DATA SOURCE: UNAVAILABLE';
+    } else {
+      text.textContent = 'DATA SOURCE: NO DATA';
+    }
   }
 }
 

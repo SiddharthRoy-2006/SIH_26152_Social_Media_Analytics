@@ -385,7 +385,32 @@ function showOAuthInfoModal(platform, layerName, scopes, info) {
         }
         if (data.authorization_url) {
           showToast(`Opening Google OAuth consent screen…`, 3000);
-          window.open(data.authorization_url, '_blank', 'width=600,height=700');
+          const popup = window.open(data.authorization_url, '_blank', 'width=600,height=700');
+
+          const onOAuthMsg = async (event) => {
+            if (event.data && event.data.type === 'OAUTH_SUCCESS') {
+              window.removeEventListener('message', onOAuthMsg);
+              showToast(`Google account successfully connected!`, 3500);
+              await fetchCredentialsStatusApi();
+              if (typeof renderCredentialCards === 'function') renderCredentialCards();
+              if (typeof renderCurrentView === 'function') renderCurrentView();
+            }
+          };
+          window.addEventListener('message', onOAuthMsg);
+
+          if (popup) {
+            const pollTimer = setInterval(async () => {
+              if (popup.closed) {
+                clearInterval(pollTimer);
+                window.removeEventListener('message', onOAuthMsg);
+                setTimeout(async () => {
+                  await fetchCredentialsStatusApi();
+                  if (typeof renderCredentialCards === 'function') renderCredentialCards();
+                  if (typeof renderCurrentView === 'function') renderCurrentView();
+                }, 600);
+              }
+            }, 1000);
+          }
           return;
         }
         showToast(data.message || 'OAuth handshake failed', 4000);

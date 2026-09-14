@@ -1,9 +1,10 @@
 {
-  "contract_address": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+  "contract_address": "0xe7f1725e7734ce288f8367e1bb143e90bb3f0512",
   "deployer_address": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
-  "transaction_hash": "28b1bdb02cb181766fac4a6b5e5bf9fc2e82982450cd8e9298fa36db816fe0f9",
-  "block_number": 1,
+  "transaction_hash": "0x25d06877b5ac3bdeb8a19f7486a614c020bdac33b93ed8c6bf37f0f10a576b37",
+  "block_number": 2,
   "chain_id": 31337,
   "rpc_url": "http://127.0.0.1:8545",
-  "network_name": "Local EVM (Hardhat Node)"
+  "network_name": "Local EVM (Hardhat Node)",
+  "deployed_at": "2026-09-11T07:52:46.811Z"
 }

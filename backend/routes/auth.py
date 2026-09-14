@@ -119,6 +119,15 @@ def _render_html_result(
     <p>{message}</p>
     <button class="close-btn" onclick="window.close()">Close This Tab</button>
   </div>
+  <script>
+    try {{
+      if (window.opener && !window.opener.closed) {{
+        window.opener.postMessage({{ type: 'OAUTH_SUCCESS', platform: 'YouTube', status: '{status_type}' }}, '*');
+      }}
+    }} catch (e) {{
+      console.warn('Could not post message to opener:', e);
+    }}
+  </script>
 </body>
 </html>"""
     return HTMLResponse(content=html_content, status_code=200 if status_type == "success" else 400)

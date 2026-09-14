@@ -166,9 +166,11 @@ class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=1000)
     platform: str = "All Platforms"
     topic: str = ""
+    query: str = ""
     period: str = "Last 30 Days"
     chart_period: str = "Monthly"
     mode: str = "general"
+    dashboard_context: dict[str, Any] | None = None
 
 
 class ChatResponse(BaseModel):

@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/chat", tags=["ai_chat"])
 
 
+@router.post("", response_model=ChatResponse, include_in_schema=False)
 @router.post("/message", response_model=ChatResponse)
 def send_chat_message(req: ChatRequest) -> ChatResponse:
     """Process a user query using controlled SocialIQ analytics tools and grounded RAG knowledge."""

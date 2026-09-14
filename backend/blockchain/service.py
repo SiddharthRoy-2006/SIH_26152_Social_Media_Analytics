@@ -94,25 +94,127 @@ class BlockchainService:
 
     def get_contract_address(self) -> str:
         """Resolve contract address from settings or deployment.json."""
-        if settings.blockchain_contract_address.strip():
-            return settings.blockchain_contract_address.strip()
+        configured = settings.blockchain_contract_address.strip()
+        if configured and Web3.is_address(configured):
+            try:
+                w3 = self.get_w3()
+                if w3.is_connected():
+                    code = w3.eth.get_code(Web3.to_checksum_address(configured))
+                    if code and len(code) > 2:
+                        return configured
+            except Exception:
+                return configured
 
         if DEPLOYMENT_FILE.exists():
             try:
                 with open(DEPLOYMENT_FILE, "r", encoding="utf-8") as f:
                     deploy_info = json.load(f)
-                    addr = deploy_info.get("contract_address", "")
-                    if addr:
+                    addr = deploy_info.get("contract_address", "") or deploy_info.get("address", "")
+                    if addr and Web3.is_address(addr):
                         return addr.strip()
             except Exception:
                 pass
 
-        return ""
+        return configured or ""
+
+    def deploy_contract(self) -> str | None:
+        """
+        Deploy SocialIQReportAudit smart contract to the connected EVM node
+        using Account #0. Updates deployment.json and returns contract address.
+        """
+        if not self.is_connected():
+            logger.warning("Cannot deploy contract: EVM node is not reachable.")
+            return None
+
+        artifact = self.load_artifact()
+        abi = artifact.get("abi")
+        bytecode = artifact.get("bytecode")
+        if not abi or not bytecode:
+            logger.warning("Cannot deploy contract: artifact ABI or bytecode missing.")
+            return None
+
+        try:
+            w3 = self.get_w3()
+            account = self.get_account()
+            Contract = w3.eth.contract(abi=abi, bytecode=bytecode)
+            nonce = w3.eth.get_transaction_count(account.address)
+            gas_price = w3.eth.gas_price
+
+            logger.info("Deploying SocialIQReportAudit to EVM from %s...", account.address)
+            tx = Contract.constructor().build_transaction({
+                "from": account.address,
+                "nonce": nonce,
+                "gas": 2_000_000,
+                "gasPrice": gas_price,
+                "chainId": w3.eth.chain_id,
+            })
+
+            pk = settings.blockchain_private_key.strip() or DEV_DEFAULT_PRIVATE_KEY
+            if not pk.startswith("0x"):
+                pk = "0x" + pk
+
+            signed = w3.eth.account.sign_transaction(tx, private_key=pk)
+            tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
+            receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=15)
+            deployed_addr = receipt.contractAddress
+
+            if deployed_addr:
+                deployed_addr = Web3.to_checksum_address(deployed_addr)
+                self._contract = w3.eth.contract(address=deployed_addr, abi=abi)
+                # Persist to deployment.json
+                deploy_info = {
+                    "contract_address": deployed_addr,
+                    "deployer_address": account.address,
+                    "transaction_hash": tx_hash.hex(),
+                    "block_number": receipt.blockNumber,
+                    "chain_id": w3.eth.chain_id,
+                    "rpc_url": settings.blockchain_rpc_url,
+                    "network_name": settings.blockchain_network_name,
+                    "deployed_at": datetime.now(timezone.utc).isoformat(),
+                }
+                try:
+                    with open(DEPLOYMENT_FILE, "w", encoding="utf-8") as f:
+                        json.dump(deploy_info, f, indent=2)
+                    logger.info("SocialIQReportAudit deployed successfully to %s", deployed_addr)
+                except Exception as file_err:
+                    logger.warning("Could not write deployment.json: %s", file_err)
+                return deployed_addr
+
+        except Exception as exc:
+            logger.error("Contract deployment failed: %s", exc)
+            return None
+
+    def ensure_contract_deployed(self) -> bool:
+        """
+        Verify that the contract is deployed on-chain; if the node is connected
+        but the contract has no bytecode at the configured address, automatically deploy it.
+        """
+        if not self.is_connected():
+            return False
+
+        w3 = self.get_w3()
+        contract_addr = self.get_contract_address()
+
+        if contract_addr and Web3.is_address(contract_addr):
+            try:
+                checksum_addr = Web3.to_checksum_address(contract_addr)
+                code = w3.eth.get_code(checksum_addr)
+                if code and len(code) > 2:
+                    return True
+            except Exception:
+                pass
+
+        # Node is connected but no contract exists at address -> deploy automatically
+        new_addr = self.deploy_contract()
+        return bool(new_addr)
 
     def get_contract(self):
         """Returns loaded Web3 contract instance if address and ABI are valid."""
         if self._contract is not None:
             return self._contract
+
+        if self.is_connected():
+            self.ensure_contract_deployed()
 
         contract_addr = self.get_contract_address()
         if not contract_addr or not Web3.is_address(contract_addr):
@@ -196,17 +298,10 @@ class BlockchainService:
             chain_id = w3.eth.chain_id
             block_number = w3.eth.block_number
 
-            # Check if contract is deployed and has bytecode
-            contract_ready = False
-            contract_msg = "Contract address not configured."
-            if contract_addr and Web3.is_address(contract_addr):
-                checksum_addr = Web3.to_checksum_address(contract_addr)
-                code = w3.eth.get_code(checksum_addr)
-                if code and len(code) > 2:
-                    contract_ready = True
-                    contract_msg = "Contract verified and ready on-chain."
-                else:
-                    contract_msg = "No bytecode found at specified contract address."
+            # Ensure contract is deployed and ready
+            contract_ready = self.ensure_contract_deployed()
+            contract_addr = self.get_contract_address()
+            contract_msg = "Contract verified and ready on-chain." if contract_ready else "Contract deployment pending."
 
             account = self.get_account()
             account_address = account.address if account else None
@@ -270,8 +365,9 @@ class BlockchainService:
         # Check if already audited locally
         existing_db_audit = get_blockchain_audit(report_id)
         if existing_db_audit and existing_db_audit.get("report_hash") == hex_hash:
-            if existing_db_audit.get("verification_status") == "RECORDED":
-                logger.info("Report %s already audited with identical hash. Reusing audit record.", report_id)
+            v_status = existing_db_audit.get("verification_status")
+            if v_status == "RECORDED":
+                logger.info("Report %s already audited with identical hash (%s). Reusing audit record.", report_id, v_status)
                 return {
                     "success": True,
                     "report_id": report_id,
@@ -284,6 +380,21 @@ class BlockchainService:
                     "network": existing_db_audit.get("blockchain_network"),
                     "recorded_at": str(existing_db_audit.get("recorded_at")),
                     "message": "Report was already audited with this exact cryptographic hash.",
+                }
+            elif v_status == "PENDING_BLOCKCHAIN" and not self.is_connected():
+                logger.info("Report %s already saved as PENDING_BLOCKCHAIN and node is still offline.", report_id)
+                return {
+                    "success": False,
+                    "report_id": report_id,
+                    "report_hash": hex_hash,
+                    "status": "PENDING_BLOCKCHAIN",
+                    "duplicate": True,
+                    "transaction_hash": None,
+                    "block_number": None,
+                    "contract_address": existing_db_audit.get("contract_address"),
+                    "network": existing_db_audit.get("blockchain_network"),
+                    "recorded_at": str(existing_db_audit.get("recorded_at")),
+                    "message": "Report was already saved locally pending blockchain connection.",
                 }
 
         # Verify blockchain is online and contract loaded
@@ -434,6 +545,7 @@ class BlockchainService:
         self,
         report_payload: dict[str, Any] | None = None,
         report_id: str | None = None,
+        persist_status: bool = True,
     ) -> dict[str, Any]:
         """
         Verify report integrity against smart contract.
@@ -479,6 +591,10 @@ class BlockchainService:
             if db_record:
                 recorded_hash = db_record.get("report_hash", "").lower()
                 matches = (current_hex_hash == recorded_hash)
+                if matches and persist_status:
+                    update_blockchain_audit_status(resolved_report_id, "VERIFIED")
+                elif not matches and persist_status:
+                    update_blockchain_audit_status(resolved_report_id, "MODIFIED")
                 return {
                     "verified": matches,
                     "status": "VERIFIED_OFFCHAIN" if matches else "MODIFIED_OFFCHAIN",
@@ -514,6 +630,38 @@ class BlockchainService:
             block_number = db_record.get("block_number") if db_record else None
 
             if not exists:
+                if db_record and db_record.get("verification_status") in ("PENDING_BLOCKCHAIN", "RECORDED"):
+                    recorded_hash = db_record.get("report_hash", "").lower()
+                    matches = (current_hex_hash == recorded_hash)
+                    if matches:
+                        if persist_status:
+                            update_blockchain_audit_status(resolved_report_id, "VERIFIED")
+                        return {
+                            "verified": True,
+                            "status": "VERIFIED_OFFCHAIN",
+                            "report_id": resolved_report_id,
+                            "current_hash": current_hex_hash,
+                            "recorded_hash": recorded_hash,
+                            "blockchain_online": True,
+                            "network": settings.blockchain_network_name,
+                            "contract_address": contract.address,
+                            "message": "Report verified against off-chain audit record (pending on-chain sync).",
+                        }
+                    else:
+                        if persist_status:
+                            update_blockchain_audit_status(resolved_report_id, "MODIFIED")
+                        return {
+                            "verified": False,
+                            "status": "MODIFIED_OFFCHAIN",
+                            "report_id": resolved_report_id,
+                            "current_hash": current_hex_hash,
+                            "recorded_hash": recorded_hash,
+                            "blockchain_online": True,
+                            "network": settings.blockchain_network_name,
+                            "contract_address": contract.address,
+                            "message": "CRITICAL ALERT: Report modified! Current hash does NOT match off-chain audit record.",
+                        }
+
                 return {
                     "verified": False,
                     "status": "NOT_AUDITED",
@@ -526,7 +674,8 @@ class BlockchainService:
                 }
 
             if is_verified:
-                update_blockchain_audit_status(resolved_report_id, "VERIFIED")
+                if persist_status:
+                    update_blockchain_audit_status(resolved_report_id, "VERIFIED")
                 return {
                     "verified": True,
                     "status": "VERIFIED",
@@ -542,7 +691,8 @@ class BlockchainService:
                     "message": "INTEGRITY VERIFIED: Current report SHA-256 hash matches the immutable blockchain record perfectly.",
                 }
             else:
-                update_blockchain_audit_status(resolved_report_id, "MODIFIED")
+                if persist_status:
+                    update_blockchain_audit_status(resolved_report_id, "MODIFIED")
                 return {
                     "verified": False,
                     "status": "MODIFIED",
@@ -570,8 +720,9 @@ class BlockchainService:
     def simulate_tamper(self, report_id: str, delta_metric: str = "engagement_score") -> dict[str, Any]:
         """
         Controlled demonstration utility for SIH evaluators.
-        Loads an audited report from database, alters a metric value, and verifies it against the blockchain,
-        demonstrating immediate detection of unauthorized modification.
+        Loads an audited report from database, alters a metric value in a temporary copy,
+        and verifies it against the blockchain, demonstrating immediate detection of unauthorized modification
+        WITHOUT permanently altering the original report or database record.
         """
         db_record = get_blockchain_audit(report_id)
         if not db_record:
@@ -584,7 +735,7 @@ class BlockchainService:
         import copy
         tampered_payload = copy.deepcopy(payload)
 
-        # Alter a prominent metric
+        # Alter a prominent metric in memory copy only
         if "metrics" in tampered_payload and isinstance(tampered_payload["metrics"], dict):
             orig_val = tampered_payload["metrics"].get("total_reach", 12500)
             tampered_payload["metrics"]["total_reach"] = orig_val + 500000
@@ -600,7 +751,8 @@ class BlockchainService:
         orig_hash, _ = compute_report_hash(payload)
         tampered_hash, _ = compute_report_hash(tampered_payload)
 
-        verification_result = self.verify_integrity(tampered_payload, report_id)
+        # Verify tampered copy without persisting MODIFIED status into original DB audit record
+        verification_result = self.verify_integrity(tampered_payload, report_id, persist_status=False)
 
         return {
             "report_id": report_id,
@@ -608,7 +760,53 @@ class BlockchainService:
             "original_hash": orig_hash,
             "tampered_hash": tampered_hash,
             "verification_result": verification_result,
-            "demonstration_note": "Tamper test demonstrates that even a single integer modification alters the SHA-256 hash and fails blockchain verification.",
+            "demonstration_note": "Tamper test demonstrates that even a single integer modification alters the SHA-256 hash and fails blockchain verification. Original database record is preserved.",
+        }
+
+    def inspect_report(self, report_payload: dict[str, Any]) -> dict[str, Any]:
+        """
+        Inspect a report payload for the UI modal:
+        Computes canonical SHA-256 hash, derives report_id, checks database
+        and smart contract for an existing audit, and returns comprehensive state.
+        """
+        if not report_payload:
+            return {
+                "report_id": None,
+                "canonical_hash": None,
+                "is_audited": False,
+                "audit": None,
+                "blockchain_health": self.get_health(),
+            }
+
+        report_id = derive_report_id(report_payload)
+        hex_hash, _ = compute_report_hash(report_payload)
+        health = self.get_health()
+
+        existing = get_blockchain_audit(report_id)
+        if existing and existing.get("report_hash") == hex_hash:
+            return {
+                "report_id": report_id,
+                "canonical_hash": hex_hash,
+                "is_audited": True,
+                "audit": {
+                    "report_id": report_id,
+                    "report_hash": hex_hash,
+                    "status": existing.get("verification_status", "RECORDED"),
+                    "transaction_hash": existing.get("transaction_hash"),
+                    "block_number": existing.get("block_number"),
+                    "contract_address": existing.get("contract_address") or health.get("contract_address"),
+                    "network": existing.get("blockchain_network") or health.get("network"),
+                    "recorded_at": str(existing.get("recorded_at")),
+                },
+                "blockchain_health": health,
+            }
+
+        return {
+            "report_id": report_id,
+            "canonical_hash": hex_hash,
+            "is_audited": False,
+            "audit": None,
+            "blockchain_health": health,
         }
 
 
